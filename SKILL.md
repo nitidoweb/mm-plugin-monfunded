@@ -69,7 +69,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 - `--account <id>` picks the account when the wallet has more than one running (`coach`, `order`,
   `close`, `withdraw`).
 - Markets: BTC, ETH, SOL, MON, HYPE, ZEC, LIT, PUMP (Perpl's perpetuals) and MonFunded liquidity's
-  95 instruments, the firm's own, in the challenge only: forex pairs (EURUSD, EURGBP, USDTRY),
+  93 instruments, the firm's own, in the challenge only: forex pairs (EURUSD, EURGBP, USDTRY),
   metals (XAUUSD), energies (XTIUSD) and indices (GER30, SPX500), each closed outside its hours.
   `coach` lists them. A MonFunded liquidity order takes the whole lot steps under `--notional`.
   Leverage: on crypto Perpl's own maximum for the market; on MonFunded liquidity 30x forex, 20x

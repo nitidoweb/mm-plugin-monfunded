@@ -7,6 +7,8 @@ const two = { minimumFractionDigits: 2, maximumFractionDigits: 2 }
 
 // $1,234.56 and -$12.30.
 export const usd = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', two)}`
+// +$12.30 for a gain, -$12.30 for a loss.
+export const signedUsd = (n: number) => (n > 0 ? `+${usd(n)}` : usd(n))
 // 30.00 USDC.
 export const coin = (n: number, symbol: string) => `${n.toLocaleString('en-US', two)} ${symbol}`
 // 406.1875 MON (wei to at most four decimals, rounded up so the figure is never short).

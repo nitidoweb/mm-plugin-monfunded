@@ -75,7 +75,7 @@ export class Api {
       data = JSON.parse(text)
     } catch {
       const blocked = res.status === 403 || res.status === 503 ? ' (a firewall such as Cloudflare may be challenging command-line clients)' : ''
-      throw new PluginError('NOT_JSON', `${this.base} answered HTTP ${res.status} with something other than MonFunded's JSON${blocked}.`, 'Try again later; if it keeps happening, tell MonFunded on Telegram (https://t.me/monfunded).')
+      throw new PluginError('NOT_JSON', `${this.base} answered HTTP ${res.status} with something other than MonFunded’s JSON${blocked}.`, 'Try again later; if it keeps happening, tell MonFunded on Telegram (https://t.me/monfunded).')
     }
     if (!res.ok) {
       const e = data as { error?: unknown; retryAt?: unknown } | null

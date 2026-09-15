@@ -1,7 +1,7 @@
 // Accounts, positions and withdrawals as the commands report them: the numbers an agent reads (USD
 // figures end in Usd) and one plain sentence each for people.
 import { MIN_HOLD_MS } from './constants.ts'
-import { coin, pct, planName, symbolOf, txUrl, usd } from './format.ts'
+import { coin, pct, planName, signedUsd, symbolOf, txUrl, usd } from './format.ts'
 import type { Challenge, ChallengeStatus, Hex, PayoutToken, Position, PositionStatus, Prices, Side, Tier, Withdrawal } from './types.ts'
 
 const cents = (n: number) => Math.round(n * 100) / 100
@@ -37,11 +37,11 @@ export function positionView(p: Position, prices: Prices, now: number): Position
     p.status === 'pending'
       ? `${head}, waiting for its fill at the next Perpl quote (${usd(p.margin)} margin locked).`
       : p.status === 'open'
-        ? `${head}, filled at ${p.entryPrice}, mark ${mark ?? 'unknown'}, P&L ${usd(pnl ?? 0)}; ${closable !== undefined && closable > now ? `can close from ${iso(closable)}` : 'can close now'}.`
+        ? `${head}, filled at ${p.entryPrice}, mark ${mark ?? 'unknown'}, P&L ${signedUsd(pnl ?? 0)}; ${closable !== undefined && closable > now ? `can close from ${iso(closable)}` : 'can close now'}.`
         : p.status === 'closing'
-          ? `${head}, closing at the next Perpl quote (P&L so far ${usd(pnl ?? 0)}).`
+          ? `${head}, closing at the next Perpl quote (P&L so far ${signedUsd(pnl ?? 0)}).`
           : p.status === 'closed'
-            ? `${head}, closed at ${p.exitPrice}${endedBy}: P&L ${usd(p.pnl ?? 0)}.`
+            ? `${head}, closed at ${p.exitPrice}${endedBy}: P&L ${signedUsd(p.pnl ?? 0)}.`
             : `${head}, cancelled before it filled; its margin is free again.`
   return {
     id: p.id,
@@ -89,7 +89,7 @@ export function withdrawalView(w: Withdrawal): WithdrawalView {
         ? `${head}, held for review: MonFunded screens payout wallets and an admin decides on this one before it pays.`
         : state === 'rejected'
           ? `${head}, declined after review: it will not be paid.`
-          : `${head}, not paid yet: MonFunded's operator pays it automatically, or collect it yourself with \`mm monfunded claim --withdrawal ${w.id}\`.`
+          : `${head}, not paid yet: MonFunded’s operator pays it automatically, or collect it yourself with \`mm monfunded claim --withdrawal ${w.id}\`.`
   return {
     id: w.id,
     amountUsd: w.amountUsd,
@@ -135,7 +135,7 @@ export function accountView(c: Challenge, tiers: Tier[], prices: Prices, now: nu
   const summary = [`${plan} ${kind} ${c.id}${c.status === 'failed' ? `, failed on ${c.reason ? FAIL_REASON[c.reason] : 'a rule'}` : ''}: equity ${usd(p.equity)}, balance ${usd(p.balance)}.`]
   if (c.status === 'assessment') summary.push(`Profit target: ${usd(p.profit)} of ${usd(p.target)} (${pct(p.target > 0 ? (p.profit / p.target) * 100 : 0)}); it counts once no position is open.`)
   if (c.status === 'funded') summary.push(`Withdrawable now: ${usd(p.withdrawable)} (you receive ${usd(p.withdrawablePaid)}).`)
-  if (c.status !== 'failed') summary.push(`Daily loss: ${usd(dailyRoom)} of room before today’s ${usd(p.dailyLimit)} limit (today ${usd(p.dailyPnl)}).`, `Drawdown: ${usd(p.drawdownRoom)} above the ${usd(p.drawdownFloor)} floor.`)
+  if (c.status !== 'failed') summary.push(`Daily loss room: ${usd(dailyRoom)} (the account fails ${usd(p.dailyLimit)} below today’s opening equity; today ${signedUsd(p.dailyPnl)}).`, `Drawdown room: ${usd(p.drawdownRoom)} above the ${usd(p.drawdownFloor)} floor.`)
   summary.push(...positions.map((x) => x.summary), ...withdrawals.map((x) => x.summary))
   return {
     id: c.id,

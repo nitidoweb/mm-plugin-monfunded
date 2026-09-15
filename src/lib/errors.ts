@@ -25,6 +25,7 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
   notActive: ['ACCOUNT_ENDED', 'That account has ended (failed), so it takes no more orders.', 'Run `mm monfunded status` to see why it ended.'],
   unknownMarket: ['UNKNOWN_MARKET', 'The challenge has no such market.', 'Use one of Perpl’s BTC, ETH, SOL, MON, HYPE, ZEC, LIT or PUMP, or a forex pair: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF or USDMXN.'],
   marketClosed: ['MARKET_CLOSED', 'That market is not tradable right now (it is closed, a forex pair is outside its hours, or its quote is stale or broken).', 'Try again later, or pick another market.'],
+  noFreshQuote: ['NO_FRESH_QUOTE', 'That forex pair has had no live price in the last 3 seconds, and MonFunded liquidity closes a position only on a live one.', 'Try again in a moment.'],
   leverageTooHigh: ['LEVERAGE_TOO_HIGH', 'That leverage is above the cap: the plan’s cap for the market (crypto or forex) and, on Perpl, Perpl’s own maximum for it, whichever is lower.', 'Run `mm monfunded coach` with the same flags to see the cap.'],
   orderTooLarge: ['ORDER_TOO_LARGE', 'That forex order is over the most one order may be (MonFunded liquidity’s cap, $5,000,000 by default).', 'Lower --notional.'],
   pairTooLarge: ['PAIR_TOO_LARGE', 'The account’s positions in that forex pair would pass the cap for one pair together ($5,000,000 by default).', 'Lower --notional, or close a position in the pair first.'],

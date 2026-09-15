@@ -143,6 +143,8 @@ export async function close(d: Deps, input: CloseInput) {
   const after = settled.account
   const view = positionView(settled.position, {}, d.now())
   const summary = [view.summary]
+  // A forex close that meets no fresh quote in time lapses: the position is open again.
+  if (p.status !== 'pending' && settled.position.status === 'open') summary.push('No fresh MonFunded liquidity quote came within 10 s, so the close lapsed and the position is open again: run the same command to try again.')
   const passed = account.status === 'assessment' && after.status === 'funded'
   if (passed) summary.push(`Passed: the assessment reached its target, so account ${after.id} is now funded (balance reset to ${usd(after.rules.size)}). Profit made from here can be withdrawn.`)
   else if (after.status === 'failed') summary.push(`Account ${after.id} has failed (${after.reason ?? 'a rule'}).`)

@@ -113,7 +113,7 @@ export function apiBase(raw: string | undefined, dev = false): { base: string; o
 }
 
 // The developer flag: MONFUNDED_DEV=1 exactly.
-export const devFlag = (env: Record<string, string | undefined>) => env[DEV_ENV] === '1'
+const devFlag = (env: Record<string, string | undefined>) => env[DEV_ENV] === '1'
 
 // The API every command talks to, from the environment: monfunded.com with the plugin's pins, or,
 // with MONFUNDED_DEV=1 and MONFUNDED_API_URL, a developer's server whose configuration (its

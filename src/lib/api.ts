@@ -2,11 +2,16 @@
 // sign-in that sets an httpOnly session cookie, which the plugin keeps and sends back itself. The
 // cookie never leaves this module except into the session store.
 import { isAddress } from 'viem'
-import { AUSD, REQUEST_TIMEOUT_MS, USDC, USER_AGENT } from './constants.ts'
-import { apiError, PluginError } from './errors.ts'
+import { AUSD, DEV_ENV, MON_MARKET, MONFUNDED_CONTRACT, REQUEST_TIMEOUT_MS, USDC, USER_AGENT } from './constants.ts'
+import { apiError, PluginError, type ErrorExtras } from './errors.ts'
 import type { Address, Challenge, ChallengeConfig, ClaimProof, Hex, Me, PayoutToken, Position, Prices, Side, Withdrawal } from './types.ts'
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
+
+// `dev`: a developer's server (MONFUNDED_DEV=1 with MONFUNDED_API_URL), whose contract and MON book
+// are trusted as they are. Otherwise the config must name the pinned ones: `pinnedContract`
+// (MONFUNDED_CONTRACT unless a test says otherwise) and Kuru's MON_USDC book.
+export type ApiOptions = { dev?: boolean; pinnedContract?: Address | null }
 
 const COOKIE = 'monfunded_session'
 // The API's answers are small; anything bigger is not MonFunded.
@@ -15,13 +20,27 @@ const MAX_BODY = 2_000_000
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const isHexOf = (v: unknown, bytes: number): v is Hex => typeof v === 'string' && new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`).test(v)
 
-// The config drives payments, so its money fields are checked before anything is signed: a real
-// contract address (or null), the two coins MonFunded uses, and plans with a contract index and a
-// positive fee.
-function checkConfig(c: ChallengeConfig): ChallengeConfig {
+const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded API sent a configuration the plugin does not trust (${why}).`, 'Nothing was signed. Tell MonFunded on Telegram (https://t.me/monfunded); if MONFUNDED_API_URL is set, check it points at MonFunded.')
+
+// The config drives payments, so its money fields are checked before anything is signed: the two
+// coins MonFunded uses, plans with a contract index and a positive fee, and, unless `dev`, the
+// pinned contract (or none yet) and the pinned MON book (or none). A developer's server may name
+// any well-formed contract and book.
+function checkConfig(c: ChallengeConfig, { dev = false, pinnedContract = MONFUNDED_CONTRACT }: ApiOptions): ChallengeConfig {
   const tiersOk = Array.isArray(c?.tiers) && c.tiers.every((t) => typeof t.id === 'string' && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && t.feeUsd > 0 && t.size > 0 && typeof t.rules === 'object')
-  const ok = tiersOk && (c.contract === null || isAddress(c.contract)) && (c.monMarket === null || isAddress(c.monMarket)) && sameAddress(c.usdc, USDC) && sameAddress(c.ausd, AUSD)
-  if (!ok) throw new PluginError('BAD_CONFIG', 'The MonFunded API sent a configuration the plugin does not trust (unexpected coins, contract or plans).', 'Nothing was signed. If MONFUNDED_API_URL is set, check it points at MonFunded.')
+  if (!tiersOk) throw untrusted('malformed plans')
+  if (typeof c.usdc !== 'string' || typeof c.ausd !== 'string' || !sameAddress(c.usdc, USDC) || !sameAddress(c.ausd, AUSD)) throw untrusted('coins other than MonFunded’s USDC and AUSD')
+  if (!(c.contract === null || (typeof c.contract === 'string' && isAddress(c.contract))) || !(c.monMarket === null || (typeof c.monMarket === 'string' && isAddress(c.monMarket)))) throw untrusted('a malformed contract or MON book')
+  if (dev) return c
+  if (c.monMarket !== null && !sameAddress(c.monMarket, MON_MARKET)) throw untrusted(`a MON book, ${c.monMarket}, other than Kuru’s MON_USDC book ${MON_MARKET}`)
+  if (c.contract === null) return c
+  if (pinnedContract === null)
+    throw new PluginError(
+      'PLUGIN_OUTDATED',
+      `The MonFunded API names a contract (${c.contract}), but this version of the plugin doesn’t know MonFunded’s contract yet, so it pays none and reads none.`,
+      `Nothing was signed. Update the plugin (a newer mm-plugin-monfunded pins the deployed contract), or set ${DEV_ENV}=1 with MONFUNDED_API_URL only for a test server.`,
+    )
+  if (!sameAddress(c.contract, pinnedContract)) throw untrusted(`a contract, ${c.contract}, other than MonFunded’s ${pinnedContract}`)
   return c
 }
 
@@ -37,14 +56,19 @@ function checkMe(m: Me): Me {
 
 export class Api {
   readonly base: string
+  // True for a developer's server (see ApiOptions): its config is trusted as it is.
+  readonly dev: boolean
   readonly #fetch: Fetch
   readonly #signal: AbortSignal | undefined
+  readonly #options: ApiOptions
   #cookie: string | undefined
 
-  constructor(base: string, fetchFn: Fetch, signal?: AbortSignal) {
+  constructor(base: string, fetchFn: Fetch, signal?: AbortSignal, options: ApiOptions = {}) {
     this.base = base
+    this.dev = options.dev ?? false
     this.#fetch = fetchFn
     this.#signal = signal
+    this.#options = options
   }
 
   // Signs the next requests in with a saved session cookie.
@@ -78,24 +102,26 @@ export class Api {
       throw new PluginError('NOT_JSON', `${this.base} answered HTTP ${res.status} with something other than MonFunded’s JSON${blocked}.`, 'Try again later; if it keeps happening, tell MonFunded on Telegram (https://t.me/monfunded).')
     }
     if (!res.ok) {
-      const e = data as { error?: unknown; retryAt?: unknown } | null
-      throw apiError(res.status, typeof e?.error === 'string' ? e.error : undefined, typeof e?.retryAt === 'number' ? e.retryAt : undefined)
+      const e = (data && typeof data === 'object' ? data : {}) as { error?: unknown } & ErrorExtras
+      throw apiError(res.status, typeof e.error === 'string' ? e.error : undefined, e)
     }
     return { data: data as T, headers: res.headers }
   }
 
   // ---- sign-in ----
 
-  // The message to sign for `address`; the caller checks its wording before signing it.
-  async nonce(address: Address): Promise<string> {
-    const { data } = await this.#call<{ message?: unknown }>('POST', '/auth/nonce', { address })
-    if (typeof data.message !== 'string') throw new PluginError('BAD_RESPONSE', 'The MonFunded API sent no sign-in message.', 'Try again in a moment.')
-    return data.message
+  // A sign-in nonce for `address` and the EIP-4361 message to sign with it; the caller checks every
+  // field of the message before signing it (login.ts).
+  async nonce(address: Address): Promise<{ nonce: string; message: string }> {
+    const { data } = await this.#call<{ nonce?: unknown; message?: unknown }>('POST', '/auth/nonce', { address })
+    if (typeof data.message !== 'string' || typeof data.nonce !== 'string') throw new PluginError('BAD_RESPONSE', 'The MonFunded API sent no sign-in message.', 'Try again in a moment.')
+    return { nonce: data.nonce, message: data.message }
   }
 
-  // Trades the signature for a session: its cookie and when it expires.
-  async verify(address: Address, signature: Hex): Promise<{ cookie: string; expiresAt: number }> {
-    const { data, headers } = await this.#call<{ address?: unknown }>('POST', '/auth/verify', { address, signature })
+  // Trades the signature (and the nonce it signed, which is single-use) for a session: its cookie
+  // and when it expires.
+  async verify(address: Address, nonce: string, signature: Hex): Promise<{ cookie: string; expiresAt: number }> {
+    const { data, headers } = await this.#call<{ address?: unknown }>('POST', '/auth/verify', { address, nonce, signature })
     const line = headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
     const cookie = new RegExp(`^${COOKIE}=([0-9a-f]{64})`).exec(line)?.[1]
     const maxAge = Number(/Max-Age=(\d+)/i.exec(line)?.[1] ?? NaN)
@@ -107,7 +133,7 @@ export class Api {
   // ---- public ----
 
   async config(): Promise<ChallengeConfig> {
-    return checkConfig((await this.#call<ChallengeConfig>('GET', '/config')).data)
+    return checkConfig((await this.#call<ChallengeConfig>('GET', '/config')).data, this.#options)
   }
 
   async prices(): Promise<Prices> {

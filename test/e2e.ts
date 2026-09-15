@@ -6,7 +6,9 @@
 //   test coins at Monad's USDC and AUSD addresses, served over JSON-RPC to the server and the plugin.
 // - MonFunded: server/challenge.mjs on http://127.0.0.1:4417 (CHALLENGE_TEST=1, Perpl prices from a
 //   stub file this script moves, a throwaway operator key); `npm run test:e2e -- --serve` runs the
-//   production server/serve.mjs instead (after `npm run build` at the root).
+//   production server/serve.mjs instead (after `npm run build` at the root). The plugin reaches it
+//   the way a developer would: MONFUNDED_DEV=1 with MONFUNDED_API_URL, so the server's own contract
+//   is trusted (the release pins monfunded.com's) and the developer-mode warning prints first.
 // - MetaMask: a stand-in executor that signs with a throwaway key and runs each transaction in the
 //   EVM, behind the plugin's own signer (the one mm's real executor sits behind).
 // The plugin's flows (src/lib) do the rest, and the chain is checked after every payment.
@@ -26,10 +28,10 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { Api, type Fetch } from '../src/lib/api.ts'
 import { buy } from '../src/lib/buy.ts'
 import { CHALLENGE_ABI, clientReader } from '../src/lib/chain.ts'
-import { AUSD, USDC } from '../src/lib/constants.ts'
+import { API_URL_ENV, AUSD, DEV_ENV, USDC } from '../src/lib/constants.ts'
 import { planLines, type Deps, type Plan } from '../src/lib/context.ts'
 import { PluginError } from '../src/lib/errors.ts'
-import { apiBase } from '../src/lib/inputs.ts'
+import { apiTarget } from '../src/lib/inputs.ts'
 import { login } from '../src/lib/login.ts'
 import { claim, withdraw } from '../src/lib/payout.ts'
 import { SessionStore } from '../src/lib/session.ts'
@@ -261,7 +263,9 @@ let serverLog = ''
 server.stdout.on('data', (d) => (serverLog += d))
 server.stderr.on('data', (d) => (serverLog += d))
 
-const BASE = apiBase(`http://127.0.0.1:${PORT}`).base
+// As a developer points the plugin at a local server (mm prints the warning on stderr).
+const { base: BASE, dev } = apiTarget({ [DEV_ENV]: '1', [API_URL_ENV]: `http://127.0.0.1:${PORT}` }, (line) => console.log(line))
+assert.equal(dev, true)
 // Ready once it answers with the contract and has read both reserves.
 for (let i = 0; ; i++) {
   const config = await fetch(`${BASE}/challenge/config`)
@@ -282,7 +286,7 @@ const store = new SessionStore(join(state, 'agent'))
 let approve = false
 // A fresh API client per command, as each mm run has: the session comes from the session file.
 const deps = (): Deps => ({
-  api: new Api(BASE, apiFetch),
+  api: new Api(BASE, apiFetch, undefined, { dev }),
   store,
   wallet: trader.address,
   reader,

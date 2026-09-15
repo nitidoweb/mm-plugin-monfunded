@@ -1,6 +1,8 @@
-// What the plugin knows that the MonFunded API doesn't send: where things live, and a few of the
-// server's rules (server/challenge-rules.mjs) so a refusal can be explained before the request is
-// sent. The server stays the judge of every rule; these only make the plugin's answers clearer.
+// What the plugin knows that the MonFunded API doesn't send: where things live, what it trusts
+// with money (pinned here, never taken from the API), and a few of the server's rules
+// (server/challenge-rules.mjs) so a refusal can be explained before the request is sent. The
+// server stays the judge of every rule; these only make the plugin's answers clearer.
+import type { Address } from './types.ts'
 
 export const VERSION = '0.1.0'
 export const USER_AGENT = `mm-plugin-monfunded/${VERSION} (+https://monfunded.com/agents/)`
@@ -9,10 +11,30 @@ export const USER_AGENT = `mm-plugin-monfunded/${VERSION} (+https://monfunded.co
 export const CHAIN_ID = 143
 export const EXPLORER_TX = 'https://monadscan.com/tx/'
 
-// The MonFunded API, and the environment variable that points the plugin at another server (a
-// local test server: https, or http on localhost only).
+// The MonFunded API. MONFUNDED_API_URL points the plugin at another server (a local test server:
+// https, or http on this machine only), and only together with MONFUNDED_DEV=1: a developer's
+// server is trusted as it is (its contract included), so the flag says so loudly on every command.
 export const DEFAULT_API = 'https://monfunded.com'
 export const API_URL_ENV = 'MONFUNDED_API_URL'
+export const DEV_ENV = 'MONFUNDED_DEV'
+
+// MonFunded's contract on Monad (contracts/MonFundedChallenge.sol), pinned: the plugin pays fees
+// to and claims payouts from this address only, whatever the API names. It is null until the
+// contract is deployed; set it then (the address scripts/deploy-contract.mjs prints) and publish
+// the plugin again. While it is null the plugin pays no contract at all, and an API that names
+// one is refused with PLUGIN_OUTDATED.
+export const MONFUNDED_CONTRACT: Address | null = null
+// Kuru's MON_USDC book on Monad, where the contract sells a fee paid in MON (enterWithMon), pinned
+// the same way (src/config.ts in the MonFunded repository lists it too).
+export const MON_MARKET: Address = '0x065c9d28e428a0db40191a54d33d5b7c71a9c394'
+
+// MonFunded's sign-in: an EIP-4361 (Sign-In with Ethereum) message for this API's domain, the
+// wallet, Monad and a nonce, with this statement. The plugin signs nothing else.
+export const SIGN_IN_STATEMENT = 'Sign in to the MonFunded Challenge.'
+// The sign-in message's issue time may differ from this computer's clock by this much, and it
+// may be valid for at most this long.
+export const SIGN_IN_SKEW_MS = 5 * 60_000
+export const SIGN_IN_MAX_TTL_MS = 10 * 60_000
 // Where the plugin keeps its MonFunded session (default ~/.monfunded).
 export const HOME_ENV = 'MONFUNDED_AGENT_HOME'
 // Kuru's market-data API, for the MON price of a fee paid in MON.

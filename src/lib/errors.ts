@@ -31,6 +31,9 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
   positionNotFound: ['POSITION_NOT_FOUND', 'No pending or open position has that id on this account.', 'Run `mm monfunded status` to list open positions.'],
   holdTime: ['HOLD_TIME', 'Positions stay open at least 60 seconds after their fill.', 'Wait until the time given, then close again.'],
   entryNotVerified: ['ENTRY_NOT_VERIFIED', 'MonFunded could not verify the entry transaction: it is not mined yet, not a MonFunded entry by this wallet for this plan, or already used.', 'Wait a few seconds and repeat the same command with --entry-tx <hash>.'],
+  entryUnderpaid: ['ENTRY_UNDERPAID', 'The entry paid less than the plan costs now (MonFunded changed the plan’s price after this payment), so it can’t start the account.', 'Don’t pay again: tell MonFunded on Telegram (https://t.me/monfunded) with the entry transaction.'],
+  entryExpired: ['ENTRY_EXPIRED', 'The entry transaction is too old: MonFunded registers entries paid in the last 3 days only.', 'Tell MonFunded on Telegram (https://t.me/monfunded) with the entry transaction.'],
+  orderLimit: ['ORDER_LIMIT', 'This account has placed the most orders MonFunded takes from one account in a UTC day.', 'Wait until 00:00 UTC, when the count starts again; positions already open keep running.'],
   notFunded: ['NOT_FUNDED', 'Only funded accounts can withdraw: pass the assessment first.', 'Run `mm monfunded status` to see the profit target.'],
   nothingToWithdraw: ['NOTHING_TO_WITHDRAW', 'That is more than the account’s withdrawable profit, or under the $10 minimum.', 'Run `mm monfunded status` to see what is withdrawable now.'],
   reserveLow: ['RESERVE_LOW', 'That coin’s payout reserve can’t cover this withdrawal right now.', 'Try the other coin with --token, or a smaller amount.'],
@@ -40,11 +43,38 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
   withdrawalRejected: ['WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Ask MonFunded on Telegram (https://t.me/monfunded) if you think this is a mistake.'],
 }
 
-// The API's error as a PluginError; `retryAt` (holdTime) goes into the message.
-export function apiError(status: number, code: string | undefined, retryAt?: number): PluginError {
+// What an error reply may carry besides its code (server/challenge-api.md): holdTime and
+// orderLimit say when to retry, orderLimit the day's limit, entryUnderpaid what was paid and what
+// the plan costs, entryExpired the oldest entry it takes.
+export type ErrorExtras = { retryAt?: unknown; limit?: unknown; paidUsd?: unknown; feeUsd?: unknown; maxAgeHours?: unknown }
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+const dollars = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+// The details an error's extras add to its message, each only when the server sent it well formed.
+function details(code: string, extra: ErrorExtras): string {
+  const retryAt = num(extra.retryAt)
+  const at = retryAt !== undefined ? new Date(retryAt).toISOString() : undefined
+  if (code === 'holdTime' && at) return ` This one can close from ${at}.`
+  if (code === 'orderLimit') {
+    const limit = num(extra.limit)
+    return `${limit !== undefined ? ` The limit is ${limit} orders a day.` : ''}${at ? ` The next order is taken from ${at}.` : ''}`
+  }
+  if (code === 'entryUnderpaid') {
+    const [paid, fee] = [num(extra.paidUsd), num(extra.feeUsd)]
+    return paid !== undefined && fee !== undefined ? ` It paid ${dollars(paid)}; the plan costs ${dollars(fee)}.` : ''
+  }
+  if (code === 'entryExpired') {
+    const hours = num(extra.maxAgeHours)
+    return hours !== undefined ? ` The oldest entry MonFunded takes is ${hours} hours old.` : ''
+  }
+  return ''
+}
+
+// The API's error as a PluginError, with what its extras say (when to retry, the amounts).
+export function apiError(status: number, code: string | undefined, extra: ErrorExtras = {}): PluginError {
   const known = code ? API_ERRORS[code] : undefined
-  if (!known) return new PluginError('API_ERROR', `MonFunded answered HTTP ${status}${code ? ` (${code})` : ''}.`, 'Try again in a moment; if it keeps failing, tell MonFunded on Telegram (https://t.me/monfunded).')
+  if (!known || !code) return new PluginError('API_ERROR', `MonFunded answered HTTP ${status}${code ? ` (${code})` : ''}.`, 'Try again in a moment; if it keeps failing, tell MonFunded on Telegram (https://t.me/monfunded).')
   const [name, message, hint] = known
-  if (code === 'holdTime' && retryAt !== undefined) return new PluginError(name, `${message} This one can close from ${new Date(retryAt).toISOString()}.`, hint)
-  return new PluginError(name, message, hint)
+  return new PluginError(name, `${message}${details(code, extra)}`, hint)
 }

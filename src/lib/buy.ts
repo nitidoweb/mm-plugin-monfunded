@@ -88,9 +88,14 @@ export async function buy(d: Deps, input: BuyInput) {
   return { ...(await register(d, tier, entryTx as Hex, again)), plan }
 }
 
+// The server's refusals that registering again can't change: the plan's price went up after the
+// payment, or the entry is older than the server takes.
+const FINAL = new Set(['ENTRY_UNDERPAID', 'ENTRY_EXPIRED'])
+
 // Registers a mined entry with MonFunded and returns the new account. The server reads the
 // receipt from its own RPC, which can trail the wallet's by a block or two: an entry it can't
-// verify yet is retried. Any failure after paying says how to register without paying again.
+// verify yet is retried. Any other failure after paying says how to register without paying
+// again, except those registering again can't fix (FINAL), which keep their own hint.
 async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -103,6 +108,7 @@ async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
         continue
       }
       const why = e instanceof Error ? e.message : String(e)
+      if (e instanceof PluginError && FINAL.has(e.code)) throw new PluginError(e.code, `${why} The entry is ${entryTx}.`, e.hint)
       throw new PluginError(e instanceof PluginError ? e.code : 'REGISTER_FAILED', `${why} The entry is ${entryTx}.`, `Register it without paying again: ${again} --entry-tx ${entryTx}`)
     }
   }

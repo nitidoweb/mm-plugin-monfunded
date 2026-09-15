@@ -9,7 +9,7 @@ import { clientReader } from './lib/chain.ts'
 import { API_URL_ENV, CHAIN_ID } from './lib/constants.ts'
 import { planLines, type Deps } from './lib/context.ts'
 import { PluginError } from './lib/errors.ts'
-import { apiBase } from './lib/inputs.ts'
+import { apiTarget } from './lib/inputs.ts'
 import { SessionStore, storeDir } from './lib/session.ts'
 import { executorSigner, type Executor } from './lib/signer.ts'
 import { activeWallet, type WalletState } from './lib/wallet.ts'
@@ -19,12 +19,13 @@ import { CommandError } from './sdk.ts'
 // `yes` (the --yes flag) approves the plan without asking.
 export async function perform<T extends { summary: string[] }>(ctx: PluginCommandContext, io: CommandIO, commandId: string, flow: (d: Deps) => Promise<T>, yes = false): Promise<T> {
   try {
-    const { base, overridden } = apiBase(process.env[API_URL_ENV])
-    if (overridden && io.isInteractive) io.emit(`Using the MonFunded API at ${base} (${API_URL_ENV}).`)
+    // MONFUNDED_DEV=1 is announced on stderr every time (JSON output on stdout stays clean).
+    const { base, dev } = apiTarget(process.env, (line) => process.stderr.write(`${line}\n`))
+    if (dev && io.isInteractive) io.emit(`Using the MonFunded API at ${base} (${API_URL_ENV}, developer mode).`)
     const wallet = activeWallet(ctx.walletStateManager.read() as WalletState)
     const reader = clientReader(ctx.publicClient(CHAIN_ID))
     const deps: Deps = {
-      api: new Api(base, fetch, io.signal),
+      api: new Api(base, fetch, io.signal, { dev }),
       store: new SessionStore(storeDir(process.env)),
       wallet,
       reader,

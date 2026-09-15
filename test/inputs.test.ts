@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { PluginError } from '../src/lib/errors.ts'
-import { apiBase, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseRisk, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
+import { apiBase, apiTarget, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseRisk, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
 
 const refused = (run: () => unknown, code = 'INVALID_INPUT') => assert.throws(run, (e) => e instanceof PluginError && e.code === code)
 
@@ -52,13 +52,38 @@ test('ids: 32-byte hex (lowercased) and position ids', () => {
   for (const bad of ['p123', 'q1a2b3c4d5e6f', 'p1a2b3c4d5e6fa']) refused(() => parsePositionId(bad))
 })
 
-test('the API origin: monfunded.com unless overridden with https, or http on this machine', () => {
+test('the API origin: monfunded.com; another (https, or http on this machine) only with the developer flag', () => {
   assert.deepEqual(apiBase(undefined), { base: 'https://monfunded.com', overridden: false })
   assert.deepEqual(apiBase('  '), { base: 'https://monfunded.com', overridden: false })
   assert.deepEqual(apiBase('https://monfunded.com/'), { base: 'https://monfunded.com', overridden: false })
-  assert.deepEqual(apiBase('http://localhost:4417'), { base: 'http://localhost:4417', overridden: true })
-  assert.deepEqual(apiBase('http://127.0.0.1:4417'), { base: 'http://127.0.0.1:4417', overridden: true })
-  for (const bad of ['http://monfunded.com', 'ftp://monfunded.com', 'https://monfunded.com/challenge', 'https://a:b@monfunded.com', 'https://monfunded.com/?x=1', 'not a url']) refused(() => apiBase(bad), 'INVALID_API_URL')
+  for (const url of ['http://localhost:4417', 'http://127.0.0.1:4417', 'https://staging.example.com'])
+    assert.throws(
+      () => apiBase(url),
+      (e) => e instanceof PluginError && e.code === 'INVALID_API_URL' && e.message.includes(new URL(url).origin) && /MONFUNDED_DEV=1/.test(e.hint),
+      url,
+    )
+  assert.deepEqual(apiBase('http://localhost:4417', true), { base: 'http://localhost:4417', overridden: true })
+  assert.deepEqual(apiBase('http://127.0.0.1:4417', true), { base: 'http://127.0.0.1:4417', overridden: true })
+  assert.deepEqual(apiBase('https://monfunded.com', true), { base: 'https://monfunded.com', overridden: false })
+  for (const bad of ['http://monfunded.com', 'ftp://monfunded.com', 'https://monfunded.com/challenge', 'https://a:b@monfunded.com', 'https://monfunded.com/?x=1', 'http://192.168.1.5:4417', 'not a url']) for (const dev of [false, true]) refused(() => apiBase(bad, dev), 'INVALID_API_URL')
+})
+
+test('MONFUNDED_DEV=1 (exactly): a developer’s server, announced loudly on every command; the flag alone changes nothing', () => {
+  const warned: string[] = []
+  const warn = (line: string) => warned.push(line)
+  assert.deepEqual(apiTarget({}, warn), { base: 'https://monfunded.com', dev: false })
+  assert.deepEqual(warned, [], 'no flag, no warning')
+  refused(() => apiTarget({ MONFUNDED_API_URL: 'http://localhost:4417' }, warn), 'INVALID_API_URL')
+  for (const flag of ['true', 'yes', '0', ' 1', '1 ']) refused(() => apiTarget({ MONFUNDED_API_URL: 'http://localhost:4417', MONFUNDED_DEV: flag }, warn), 'INVALID_API_URL')
+  assert.deepEqual(warned, [])
+  assert.deepEqual(apiTarget({ MONFUNDED_API_URL: 'http://localhost:4417', MONFUNDED_DEV: '1' }, warn), { base: 'http://localhost:4417', dev: true })
+  const loud = warned.join('\n')
+  assert.match(loud, /^!{78}\nMONFUNDED_DEV=1: DEVELOPER MODE\. The plugin talks to http:\/\/localhost:4417, not https:\/\/monfunded\.com/)
+  assert.match(loud, /whatever contract and MON book it names get paid/)
+  assert.match(loud, /never with real money\.\n!{78}$/)
+  warned.length = 0
+  assert.deepEqual(apiTarget({ MONFUNDED_DEV: '1' }, warn), { base: 'https://monfunded.com', dev: false })
+  assert.match(warned.join('\n'), /isn't: the plugin talks to https:\/\/monfunded\.com\nwith its usual pins/)
 })
 
 test('valid(): true, or the refusal in words for mm’s input prompts', () => {

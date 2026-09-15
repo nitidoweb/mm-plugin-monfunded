@@ -1,12 +1,11 @@
-// login, buy and status against a stand-in API, Monad and MetaMask executor.
+// buy and status against a stand-in API, Monad and MetaMask executor (login: login.test.ts).
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { decodeFunctionData, recoverMessageAddress, toHex, type Hex } from 'viem'
+import { decodeFunctionData, toHex, type Hex } from 'viem'
 import { buy } from '../src/lib/buy.ts'
 import { CHALLENGE_ABI, ERC20_ABI } from '../src/lib/chain.ts'
 import { AUSD, USDC } from '../src/lib/constants.ts'
 import { PluginError } from '../src/lib/errors.ts'
-import { login } from '../src/lib/login.ts'
 import type { ExecutorRequest } from '../src/lib/signer.ts'
 import { status } from '../src/lib/status.ts'
 import type { Position } from '../src/lib/types.ts'
@@ -17,38 +16,6 @@ const txOf = (r: ExecutorRequest | undefined) => {
   assert.equal(r?.kind, 'transaction')
   return (r as Extract<ExecutorRequest, { kind: 'transaction' }>).transaction
 }
-const NEW_COOKIE = 'ee'.repeat(32)
-const signInMessage = (address: string) => `MonFunded Challenge\n\nSign in as ${address}\nNonce: ${'ab'.repeat(16)}\nIssued: 2026-09-15T12:00:00.000Z`
-
-// ---- login ----
-
-test('login signs MonFunded’s sign-in message, keeps the session, and never shows the cookie', async () => {
-  const { api, calls } = fakeApi({
-    'POST /auth/nonce': (b) => ({ nonce: 'ab'.repeat(16), message: signInMessage(String(b?.address)) }),
-    'POST /auth/verify': async (b) => {
-      assert.equal(await recoverMessageAddress({ message: signInMessage(wallet.address), signature: b?.signature as Hex }), wallet.address)
-      return reply(200, { address: wallet.address }, { 'set-cookie': `monfunded_session=${NEW_COOKIE}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict` })
-    },
-    'GET /me': () => ({ address: wallet.address, active: [account()], past: [] }),
-  })
-  const { d, executor, store } = makeDeps(api)
-  const r = await login(d)
-  assert.equal(executor.requests.length, 1)
-  assert.equal(calls[0].cookie, COOKIE, 'the previous session goes along, so the server retires it')
-  assert.equal(store.get(BASE, T0)?.cookie, NEW_COOKIE)
-  assert.equal(calls.at(-1)?.cookie, NEW_COOKIE)
-  assert.equal(r.activeAccounts, 1)
-  assert.ok(!JSON.stringify(r).includes(NEW_COOKIE))
-})
-
-test('login signs nothing but MonFunded’s sign-in message for this very wallet', async () => {
-  for (const message of ['Please sign: transfer everything', signInMessage('0x0000000000000000000000000000000000000001'), `${signInMessage(wallet.address)}\nand this too`]) {
-    const { api } = fakeApi({ 'POST /auth/nonce': () => ({ nonce: 'x', message }) })
-    const { d, executor } = makeDeps(api, { signedIn: false })
-    await assert.rejects(login(d), code('UNEXPECTED_MESSAGE'))
-    assert.equal(executor.requests.length, 0)
-  }
-})
 
 // ---- buy ----
 
@@ -177,6 +144,27 @@ test('an entry the server can’t see yet is retried; a failure after paying say
   assert.equal(one.clock.now, T0 + 4_000)
   const never = fakeApi(buyRoutes({ 'POST /enter': () => reply(400, { error: 'entryNotVerified' }) }))
   await assert.rejects(buy(makeDeps(never.api, { yes: true }).d, TIGHT_5K), (e) => code('ENTRY_NOT_VERIFIED')(e) && /^Register it without paying again: mm monfunded buy --size 5k --risk tight --entry-tx 0x[0-9a-f]{64}$/.test((e as PluginError).hint))
+})
+
+test('an entry the server refuses for good (underpaid after a price change, too old) keeps its own hint, unretried', async () => {
+  const cases: [Record<string, unknown>, string, RegExp][] = [
+    [{ error: 'entryUnderpaid', paidUsd: 30, feeUsd: 35 }, 'ENTRY_UNDERPAID', /paid \$30\.00; the plan costs \$35\.00/],
+    [{ error: 'entryExpired', maxAgeHours: 72 }, 'ENTRY_EXPIRED', /72 hours/],
+  ]
+  for (const [body, expected, detail] of cases) {
+    let tries = 0
+    const { api } = fakeApi(
+      buyRoutes({
+        'POST /enter': () => {
+          tries++
+          return reply(400, body)
+        },
+      }),
+    )
+    const { d } = makeDeps(api, { yes: true })
+    await assert.rejects(buy(d, TIGHT_5K), (e) => code(expected)(e) && detail.test((e as Error).message) && /The entry is 0x[0-9a-f]{64}\.$/.test((e as Error).message) && /Telegram/.test((e as PluginError).hint) && !/--entry-tx/.test((e as PluginError).hint))
+    assert.equal(tries, 1, expected)
+  }
 })
 
 test('--entry-tx registers an entry already paid, without paying again', async () => {

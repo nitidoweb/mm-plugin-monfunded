@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Api } from '../src/lib/api.ts'
-import { USER_AGENT } from '../src/lib/constants.ts'
+import { MON_MARKET as PINNED_BOOK, MONFUNDED_CONTRACT, USER_AGENT } from '../src/lib/constants.ts'
 import { PluginError } from '../src/lib/errors.ts'
-import { BASE, config, COOKIE, fakeApi, reply, response, wallet } from './fakes.ts'
+import type { ChallengeConfig } from '../src/lib/types.ts'
+import { BASE, config, CONTRACT, COOKIE, fakeApi, reply, response, wallet } from './fakes.ts'
 
 const code = (c: string) => (e: unknown) => e instanceof PluginError && e.code === c
 
@@ -43,26 +44,69 @@ test('an unreachable server, and a redirect, are network refusals', async () => 
   await assert.rejects(api.config(), (e) => code('NETWORK')(e) && (e as Error).message.includes('fetch failed'))
 })
 
-test('verify keeps the session cookie and its lifetime, and refuses an answer without one', async () => {
+test('MonFunded’s newer refusals carry their figures: the day’s order limit, an underpaid or expired entry', async () => {
+  const id = `0x${'a1'.repeat(32)}`
+  const tx = `0x${'fe'.repeat(32)}` as const
+  const retryAt = Date.UTC(2026, 8, 16)
+  const { api } = fakeApi({
+    [`POST /${id}/orders`]: () => reply(429, { error: 'orderLimit', limit: 500, retryAt }),
+    'POST /enter': (b) => (b?.tier === 'tight-5000' ? reply(400, { error: 'entryUnderpaid', paidUsd: 30, feeUsd: 35 }) : reply(400, { error: 'entryExpired', maxAgeHours: 72 })),
+  })
+  const message = (e: unknown) => (e as Error).message
+  await assert.rejects(api.order(id, { marketId: 'perpl:BTC', side: 'long', notional: 100, leverage: 1 }), (e) => code('ORDER_LIMIT')(e) && /500 orders a day/.test(message(e)) && message(e).includes(new Date(retryAt).toISOString()))
+  await assert.rejects(api.enter('tight-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && /It paid \$30\.00; the plan costs \$35\.00\./.test(message(e)))
+  await assert.rejects(api.enter('medium-10000', tx), (e) => code('ENTRY_EXPIRED')(e) && /72 hours old/.test(message(e)))
+  // Extras that aren't numbers are left out rather than printed.
+  const odd = fakeApi({ 'POST /enter': () => reply(400, { error: 'entryUnderpaid', paidUsd: '30', feeUsd: null }) })
+  await assert.rejects(odd.api.enter('tight-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && !/\$/.test(message(e)))
+})
+
+test('verify sends the address, the nonce and the signature, keeps the session cookie and its lifetime, and refuses an answer without one', async () => {
   const cookie = 'ab'.repeat(32)
+  const nonce = 'cd'.repeat(16)
   const good = fakeApi({ 'POST /auth/verify': () => reply(200, { address: wallet.address }, { 'set-cookie': `monfunded_session=${cookie}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict` }) })
   const before = Date.now()
-  const s = await good.api.verify(wallet.address, '0x1234')
+  const s = await good.api.verify(wallet.address, nonce, '0x1234')
+  assert.deepEqual(good.calls[0].body, { address: wallet.address, nonce, signature: '0x1234' })
   assert.equal(s.cookie, cookie)
   assert.ok(s.expiresAt >= before + 604_800_000 && s.expiresAt <= Date.now() + 604_800_000)
   const bad = fakeApi({ 'POST /auth/verify': () => reply(200, { address: wallet.address }) })
-  await assert.rejects(bad.api.verify(wallet.address, '0x1234'), code('BAD_RESPONSE'))
+  await assert.rejects(bad.api.verify(wallet.address, nonce, '0x1234'), code('BAD_RESPONSE'))
   const other = fakeApi({ 'POST /auth/verify': () => reply(200, { address: '0x0000000000000000000000000000000000000001' }, { 'set-cookie': `monfunded_session=${cookie}; Max-Age=60` }) })
-  await assert.rejects(other.api.verify(wallet.address, '0x1234'), code('BAD_RESPONSE'))
+  await assert.rejects(other.api.verify(wallet.address, nonce, '0x1234'), code('BAD_RESPONSE'))
 })
 
 test('a config naming other coins or a malformed contract is not trusted; no contract is fine', async () => {
   const withNull = fakeApi({ 'GET /config': () => config({ contract: null }) })
   assert.equal((await withNull.api.config()).contract, null)
-  for (const bad of [config({ usdc: '0x0000000000000000000000000000000000000001' }), config({ contract: '0x12' as `0x${string}` }), { ...config(), tiers: [{ id: 'x', index: 300, feeUsd: 1, size: 1, rules: {} }] }]) {
+  for (const bad of [config({ usdc: '0x0000000000000000000000000000000000000001' }), config({ contract: '0x12' as `0x${string}` }), config({ monMarket: '0x34' as `0x${string}` }), { ...config(), tiers: [{ id: 'x', index: 300, feeUsd: 1, size: 1, rules: {} }] }]) {
     const { api } = fakeApi({ 'GET /config': () => bad })
     await assert.rejects(api.config(), code('BAD_CONFIG'))
   }
+})
+
+test('the config must name the pinned contract and Kuru’s MON_USDC book, whatever the API says', async () => {
+  const other = '0x00000000000000000000000000000000000000c1'
+  const read = (c: ChallengeConfig, options?: Parameters<typeof fakeApi>[1]) => fakeApi({ 'GET /config': () => c }, options).api.config()
+  assert.equal(PINNED_BOOK.toLowerCase(), '0x065c9d28e428a0db40191a54d33d5b7c71a9c394')
+  // A plugin released after the deployment (fakeApi pins CONTRACT): that contract, or none.
+  assert.equal((await read(config())).contract, CONTRACT)
+  assert.equal((await read(config({ contract: CONTRACT.toLowerCase() as `0x${string}` }))).contract, CONTRACT.toLowerCase(), 'any case')
+  assert.equal((await read(config({ contract: null, monMarket: null }))).monMarket, null)
+  await assert.rejects(read(config({ contract: other })), (e) => code('BAD_CONFIG')(e) && (e as Error).message.includes(other))
+  await assert.rejects(read(config({ monMarket: other })), (e) => code('BAD_CONFIG')(e) && (e as Error).message.includes('MON_USDC'))
+  // Released before the deployment (no pin yet): it pays no contract, and says to update.
+  assert.equal((await read(config({ contract: null }), { pinnedContract: null })).contract, null)
+  await assert.rejects(read(config(), { pinnedContract: null }), (e) => code('PLUGIN_OUTDATED')(e) && /Update the plugin/.test((e as PluginError).hint))
+  // By default the pin is MONFUNDED_CONTRACT (null until MonFunded deploys its contract).
+  const pinned = read(config({ contract: MONFUNDED_CONTRACT ?? CONTRACT }), {})
+  if (MONFUNDED_CONTRACT === null) await assert.rejects(pinned, code('PLUGIN_OUTDATED'))
+  else assert.equal((await pinned).contract, MONFUNDED_CONTRACT)
+  // A developer's server (MONFUNDED_DEV=1 with MONFUNDED_API_URL) names its own; the coins stay pinned.
+  const dev = await read(config({ contract: other, monMarket: other }), { dev: true, pinnedContract: null })
+  assert.deepEqual([dev.contract, dev.monMarket], [other, other])
+  await assert.rejects(read(config({ ausd: other }), { dev: true }), code('BAD_CONFIG'))
+  await assert.rejects(read(config({ contract: '0x12' as `0x${string}` }), { dev: true }), code('BAD_CONFIG'))
 })
 
 test('a claim proof must be a 65-byte signature, a 32-byte root and a payout coin', async () => {

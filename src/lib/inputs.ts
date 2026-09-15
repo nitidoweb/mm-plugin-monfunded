@@ -1,6 +1,6 @@
 // Every flag the commands take, parsed strictly: the exact shapes below or a plain-words refusal
 // (INVALID_INPUT). Nothing is guessed or rounded on the user's behalf.
-import { API_URL_ENV, DEFAULT_API } from './constants.ts'
+import { API_URL_ENV, DEFAULT_API, DEV_ENV } from './constants.ts'
 import { PluginError } from './errors.ts'
 import type { PayoutToken, PayWith, Risk, Side } from './types.ts'
 
@@ -87,10 +87,12 @@ export function parsePositionId(raw: string): string {
 }
 
 // The MonFunded API origin: monfunded.com unless MONFUNDED_API_URL names another server, which
-// must be https, or http on this machine (a local test server), and an origin only.
-export function apiBase(raw: string | undefined): { base: string; overridden: boolean } {
+// must be https, or http on this machine (a local test server), and an origin only. Another server
+// is a developer's, trusted as it is (its contract too), so it is refused unless `dev` (the
+// MONFUNDED_DEV=1 flag) says that is meant.
+export function apiBase(raw: string | undefined, dev = false): { base: string; overridden: boolean } {
   if (raw === undefined || raw.trim() === '') return { base: DEFAULT_API, overridden: false }
-  const refuse = (why: string) => new PluginError('INVALID_API_URL', `${API_URL_ENV} ${why}: "${raw}".`, `Unset ${API_URL_ENV} to use ${DEFAULT_API}, or set it to a server origin such as http://localhost:4417.`)
+  const refuse = (why: string) => new PluginError('INVALID_API_URL', `${API_URL_ENV} ${why}: "${raw}".`, `Unset ${API_URL_ENV} to use ${DEFAULT_API}, or set it to a server origin such as http://localhost:4417 (with ${DEV_ENV}=1).`)
   let url: URL
   try {
     url = new URL(raw.trim())
@@ -100,5 +102,36 @@ export function apiBase(raw: string | undefined): { base: string; overridden: bo
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]'
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw refuse('must use https (plain http only on localhost)')
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw refuse('must be an origin only (no path, query or credentials)')
-  return { base: url.origin, overridden: url.origin !== DEFAULT_API }
+  if (url.origin === DEFAULT_API) return { base: DEFAULT_API, overridden: false }
+  if (!dev)
+    throw new PluginError(
+      'INVALID_API_URL',
+      `${API_URL_ENV} points the plugin at ${url.origin}, but it trusts only ${DEFAULT_API} unless the developer flag is set: another server decides which contract gets paid.`,
+      `Unset ${API_URL_ENV} to use ${DEFAULT_API}. To test against your own server, also set ${DEV_ENV}=1, and never with real funds.`,
+    )
+  return { base: url.origin, overridden: true }
+}
+
+// The developer flag: MONFUNDED_DEV=1 exactly.
+export const devFlag = (env: Record<string, string | undefined>) => env[DEV_ENV] === '1'
+
+// The API every command talks to, from the environment: monfunded.com with the plugin's pins, or,
+// with MONFUNDED_DEV=1 and MONFUNDED_API_URL, a developer's server whose configuration (its
+// contract, its MON book) is trusted as it is (`dev`). The flag is announced through `warn` on
+// every command, loudly, whether or not it changes anything.
+export function apiTarget(env: Record<string, string | undefined>, warn: (line: string) => void): { base: string; dev: boolean } {
+  const flag = devFlag(env)
+  const { base, overridden } = apiBase(env[API_URL_ENV], flag)
+  if (flag) {
+    const bar = '!'.repeat(78)
+    const lines = overridden
+      ? [
+          `${DEV_ENV}=1: DEVELOPER MODE. The plugin talks to ${base}, not ${DEFAULT_API},`,
+          'and trusts that server as it is: whatever contract and MON book it names get paid.',
+          'Use it only with a test server and test funds, never with real money.',
+        ]
+      : [`${DEV_ENV}=1 is set, but ${API_URL_ENV} isn't: the plugin talks to ${DEFAULT_API}`, 'with its usual pins (the contract, the MON book, Monad). Unset the flag if you did not mean it.']
+    for (const line of [bar, ...lines, bar]) warn(line)
+  }
+  return { base, dev: overridden }
 }

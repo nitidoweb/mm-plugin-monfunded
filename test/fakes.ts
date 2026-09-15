@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getAddress, keccak256, toHex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { Api, type Fetch } from '../src/lib/api.ts'
+import { Api, type ApiOptions, type Fetch } from '../src/lib/api.ts'
 import type { ChainReader } from '../src/lib/chain.ts'
 import { AUSD, USDC } from '../src/lib/constants.ts'
 import type { Deps, Plan } from '../src/lib/context.ts'
@@ -67,7 +67,8 @@ export function response(status: number, text: string, headers: Record<string, s
   return { ok: status >= 200 && status < 300, status, headers: new Headers({ 'content-type': 'application/json', ...headers }), text: async () => text, json: async () => JSON.parse(text) } as unknown as Response
 }
 
-export function fakeApi(routes: Record<string, Handler>) {
+// `options` default to a plugin released after the deployment: CONTRACT is the pinned contract.
+export function fakeApi(routes: Record<string, Handler>, options: ApiOptions = { pinnedContract: CONTRACT }) {
   const calls: Call[] = []
   const fetchFn: Fetch = async (url, init) => {
     const headers = { ...(init.headers as Record<string, string>) }
@@ -84,7 +85,7 @@ export function fakeApi(routes: Record<string, Handler>) {
     const r = (out as Reply)?.reply ? (out as Reply) : reply(200, out)
     return response(r.status, typeof r.body === 'string' ? r.body : JSON.stringify(r.body), r.headers)
   }
-  return { api: new Api(BASE, fetchFn), calls, fetch: fetchFn }
+  return { api: new Api(BASE, fetchFn, undefined, options), calls, fetch: fetchFn }
 }
 
 // ---- Monad ----

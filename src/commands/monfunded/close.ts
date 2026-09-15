@@ -10,7 +10,7 @@ const inputs = {
 } satisfies InputSchema
 
 export default class MonfundedClose extends PluginCommand<Awaited<ReturnType<typeof close>>> {
-  static override description = 'Close a position on a MonFunded account once its 60-second minimum hold is over (a pending order is cancelled instead) and wait for the close. Nothing is signed.'
+  static override description = 'Close a position on a MonFunded account once its 60-second minimum hold is over and wait for the close (a pending order can’t be cancelled: it fills or lapses within seconds). Nothing is signed.'
   static override examples = ['<%= config.bin %> monfunded close --position p1a2b3c4d5e6f']
   static override flags = schemaToFlags(inputs)
   protected readonly pluginCommandId = 'monfunded:close'

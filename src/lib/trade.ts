@@ -138,14 +138,16 @@ export async function close(d: Deps, input: CloseInput) {
     const at = p.openedAt + MIN_HOLD_MS
     throw new PluginError('HOLD_TIME', `Positions stay open at least 60 s after their fill; ${p.id} can close from ${new Date(at).toISOString()} (in ${Math.ceil((at - now) / 1000)} s).`, 'Wait, then run the same command again.')
   }
-  // An open position closes at the next quote; a pending order is cancelled at once.
+  // A pending order is the server's to fill or let lapse, never the trader's to cancel.
+  if (p.status === 'pending') throw new PluginError('ORDER_PENDING', `${p.id} is an order still filling: a pending order can’t be cancelled.`, 'Wait a few seconds: it fills or lapses by itself. Close it once it has filled and its 60 s hold is over.')
+  // An open position closes at the next quote after the server's short delay.
   if (p.status !== 'closing') await d.api.close(account.id, p.id)
-  const settled = await settle(d, account.id, p, p.status === 'pending' ? 'pending' : 'closing')
+  const settled = await settle(d, account.id, p, 'closing')
   const after = settled.account
   const view = positionView(settled.position, {}, d.now())
   const summary = [view.summary]
   // A forex close that meets no fresh quote in time lapses: the position is open again.
-  if (p.status !== 'pending' && settled.position.status === 'open') summary.push('No fresh MonFunded liquidity quote came within 10 s, so the close lapsed and the position is open again: run the same command to try again.')
+  if (settled.position.status === 'open') summary.push('No fresh MonFunded liquidity quote came within 10 s, so the close lapsed and the position is open again: run the same command to try again.')
   const passed = account.status === 'assessment' && after.status === 'funded'
   if (passed) summary.push(`Passed: the assessment reached its target, so account ${after.id} is now funded (balance reset to ${usd(after.rules.size)}). Profit made from here can be withdrawn.`)
   else if (after.status === 'failed') summary.push(`Account ${after.id} has failed (${after.reason ?? 'a rule'}).`)

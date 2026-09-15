@@ -62,7 +62,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `mm monfunded buy --size 5k --risk tight --pay usdc` | Pays an assessment's fee in `usdc`, `ausd` or `mon` | Transactions, with `--yes` |
 | `mm monfunded coach --market BTC --side long --notional 1000 --leverage 2` | Checks an intended order against the rules; sends nothing | Nothing |
 | `mm monfunded order --market BTC --side long --notional 1000 --leverage 2` | Opens a position and waits for its fill | Nothing |
-| `mm monfunded close --position p1a2b3c4d5e6f` | Closes a position after its 60 s hold (cancels a pending one) | Nothing |
+| `mm monfunded close --position p1a2b3c4d5e6f` | Closes a position after its 60 s hold (a pending order fills or lapses by itself) | Nothing |
 | `mm monfunded withdraw --amount 100 --token usdc` | Takes profit off a funded account; 80 % is paid to the wallet | Nothing, but needs `--yes` |
 | `mm monfunded claim --withdrawal 0x…` | Collects an unpaid payout from the contract | A transaction, with `--yes` |
 

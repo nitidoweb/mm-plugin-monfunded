@@ -93,6 +93,9 @@
   "allowScripts": {
     "yarn": false
   },
+  "overrides": {
+    "tmp": "^0.2.7"
+  },
   "dependencies": {
     "viem": "2.56.5"
   },

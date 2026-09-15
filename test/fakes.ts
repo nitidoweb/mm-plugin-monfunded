@@ -22,7 +22,7 @@ export const COOKIE = 'c0'.repeat(32)
 export const ACCOUNT_ID = `0x${'a1'.repeat(32)}`
 
 const rules = (risk: 'tight' | 'medium', size: number): Rules =>
-  risk === 'tight' ? { size, dailyLossPct: 3, maxDrawdownPct: 3, profitTargetPct: 9, leverage: { crypto: 5 } } : { size, dailyLossPct: 4, maxDrawdownPct: 7, profitTargetPct: 10, leverage: { crypto: 5 } }
+  risk === 'tight' ? { size, dailyLossPct: 3, maxDrawdownPct: 3, profitTargetPct: 9, leverage: { crypto: 15, forex: 50 } } : { size, dailyLossPct: 4, maxDrawdownPct: 7, profitTargetPct: 10, leverage: { crypto: 15, forex: 50 } }
 
 export const TIERS: Tier[] = [
   { id: 'tight-5000', index: 0, risk: 'tight', size: 5000, feeUsd: 30, rules: rules('tight', 5000) },
@@ -53,6 +53,8 @@ export const PRICES: Prices = {
   'perpl:BTC': { price: 60_000, bid: 59_999, ask: 60_001, updatedAt: T0, tradable: true, maxLeverage: 15 },
   'perpl:LIT': { price: 1, bid: 0.999, ask: 1.001, updatedAt: T0, tradable: true, maxLeverage: 3 },
   'perpl:ZEC': { price: 30, updatedAt: T0, tradable: false, maxLeverage: 10 },
+  // A forex pair of MonFunded liquidity: its mid, the feed's bid and ask, no venue cap.
+  'fx:USDJPY': { price: 155.106, bid: 155.104, ask: 155.108, updatedAt: T0, tradable: true },
 }
 
 // ---- the API: 'METHOD /path' (under /challenge) → a handler; a plain value answers 200 ----

@@ -80,10 +80,10 @@ $ mm monfunded coach --market BTC --side long --notional 20000 --leverage 5
   Opening and closing costs about $0.33 in spread.
   Caution: under 1 % is an ordinary move for crypto. A smaller --notional leaves more room.
 
-$ mm monfunded coach --market BTC --side long --notional 5000 --leverage 6
-  MonFunded would refuse this order: 6x is above the 5x cap on BTC (the plan allows 5x, Perpl 15x). Pass --leverage 5 or less.
+$ mm monfunded coach --market BTC --side long --notional 5000 --leverage 16
+  MonFunded would refuse this order: 16x is above the 15x cap on BTC (the plan allows 15x, Perpl 15x). Pass --leverage 15 or less.
   A 3 % move against you (BTC down to about 58201) fails the account on its daily loss limit.
-  The account fails before this position’s liquidation point (15 % away).
+  The account fails before this position’s liquidation point (5.63 % away).
   It fills at the next Perpl quote, near 60000.5 (the ask), and must stay open 60 s before it can be closed.
   Opening and closing costs about $0.08 in spread.
 

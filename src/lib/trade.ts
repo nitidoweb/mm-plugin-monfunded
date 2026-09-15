@@ -3,7 +3,7 @@
 // against an intended order and says what would happen, without sending it; `order` runs the same
 // checks first, sends the order and waits for its fill; `close` respects the 60 s minimum hold and
 // waits for the close.
-import { CAUTION_MOVE_PCT, FILL_WAIT_MS, LIQUIDATION_LOSS, MARKET_CATEGORY, MIN_HOLD_MS, MIN_NOTIONAL_USD, POLL_MS } from './constants.ts'
+import { CAUTION_MOVE_PCT, categoryOf, FILL_WAIT_MS, LIQUIDATION_LOSS, MIN_HOLD_MS, MIN_NOTIONAL_USD, POLL_MS, sourceOf } from './constants.ts'
 import { pickAccount, signIn, type Deps } from './context.ts'
 import { PluginError } from './errors.ts'
 import { pct, symbolOf, usd } from './format.ts'
@@ -24,7 +24,8 @@ async function setup(d: Deps, input: OrderInput): Promise<Setup> {
   const [me, prices] = await Promise.all([d.api.me(), d.api.prices()])
   const account = pickAccount(me, input.account)
   const quote = prices[input.market]
-  const planCap = account.rules.leverage[MARKET_CATEGORY] ?? 1
+  // The plan's cap for the market's category (crypto or forex); a Perpl quote adds Perpl's own.
+  const planCap = account.rules.leverage[categoryOf(input.market)] ?? 1
   const perplCap = quote?.maxLeverage
   // Free margin: equity less the margin every pending, open and closing position locks.
   const used = account.positions.reduce((sum, p) => sum + p.margin, 0)
@@ -35,7 +36,7 @@ async function setup(d: Deps, input: OrderInput): Promise<Setup> {
 function refusal(input: OrderInput, s: Setup): PluginError | undefined {
   const symbol = symbolOf(input.market)
   if (!s.quote) return new PluginError('UNKNOWN_MARKET', `The challenge has no ${symbol} market.`, `Markets: ${Object.keys(s.prices).map(symbolOf).join(', ')}.`)
-  if (!s.quote.tradable) return new PluginError('MARKET_CLOSED', `${symbol} is not tradable right now (Perpl closed it, or its quote is stale or broken).`, 'Try again in a few seconds, or pick another market.')
+  if (!s.quote.tradable) return new PluginError('MARKET_CLOSED', `${symbol} is not tradable right now (its market is closed, a forex pair outside its hours, or its quote is stale or broken).`, 'Try again later, or pick another market.')
   if (input.leverage > s.cap) return new PluginError('LEVERAGE_TOO_HIGH', `${input.leverage}x is above the ${s.cap}x cap on ${symbol} (the plan allows ${s.planCap}x${s.perplCap ? `, Perpl ${s.perplCap}x` : ''}).`, `Pass --leverage ${s.cap} or less.`)
   if (input.notional < MIN_NOTIONAL_USD) return new PluginError('SIZE_TOO_SMALL', `Positions start at ${usd(MIN_NOTIONAL_USD)} of notional.`, `Pass --notional ${MIN_NOTIONAL_USD} or more.`)
   if (s.margin > s.freeMargin) return new PluginError('INSUFFICIENT_MARGIN', `This position needs ${usd(s.margin)} of margin (notional ÷ leverage) and the account has ${usd(s.freeMargin)} free.`, 'Lower --notional, raise --leverage within the cap, or close a position first.')
@@ -43,8 +44,8 @@ function refusal(input: OrderInput, s: Setup): PluginError | undefined {
 }
 
 // What the order risks: where it fills, the adverse move that fails the account (the smaller of
-// today's loss room and the drawdown room, less what the fill costs at once against Perpl's mark,
-// on this position alone), and the move that liquidates the position (90 % of its margin).
+// today's loss room and the drawdown room, less what the fill costs at once against the mark, on
+// this position alone), and the move that liquidates the position (90 % of its margin).
 function riskOf(input: OrderInput, account: Challenge, q: Quote) {
   const long = input.side === 'long'
   const entry = long ? (q.ask ?? q.price) : (q.bid ?? q.price)
@@ -89,9 +90,9 @@ export async function coach(d: Deps, input: OrderInput) {
     const way = input.side === 'long' ? 'down' : 'up'
     summary.push(`A ${pct(risk.failMovePct)} move against you (${symbol} ${way} to about ${risk.failPrice}) fails the account on its ${risk.failsOn} limit${s.account.positions.length ? ', not counting your other open positions' : ''}.`)
     summary.push(risk.liquidationMovePct < risk.failMovePct ? `The position is liquidated first, after a ${pct(risk.liquidationMovePct)} move (about ${risk.liquidationPrice}), losing 90 % of its ${usd(s.margin)} margin.` : `The account fails before this position’s liquidation point (${pct(risk.liquidationMovePct)} away).`)
-    summary.push(`It fills at the next Perpl quote, near ${risk.entryPrice} (the ${input.side === 'long' ? 'ask' : 'bid'}), and must stay open ${risk.minimumHoldSeconds} s before it can be closed.`)
+    summary.push(`It fills at the next ${sourceOf(input.market)} quote, near ${risk.entryPrice} (the ${input.side === 'long' ? 'ask' : 'bid'}), and must stay open ${risk.minimumHoldSeconds} s before it can be closed.`)
     if (risk.roundTripSpreadUsd !== undefined) summary.push(`Opening and closing costs about ${usd(risk.roundTripSpreadUsd)} in spread.`)
-    if (verdict === 'caution') summary.push(`Caution: under ${pct(CAUTION_MOVE_PCT)} is an ordinary move for crypto. A smaller --notional leaves more room.`)
+    if (verdict === 'caution') summary.push(`Caution: a move under ${pct(CAUTION_MOVE_PCT)} is an ordinary one. A smaller --notional leaves more room.`)
   }
   return { verdict, account: s.account.id, market: symbol, side: input.side, notionalUsd: input.notional, leverage: input.leverage, marginUsd: s.margin, checks, ...(risk && { risk }), summary }
 }

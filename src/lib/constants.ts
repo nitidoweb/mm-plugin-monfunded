@@ -50,8 +50,11 @@ export const AUSD = '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a'
 export const MIN_NOTIONAL_USD = 10
 export const MIN_HOLD_MS = 60_000
 export const LIQUIDATION_LOSS = 0.9
-// Every challenge market is a crypto perp on Perpl: the plan's `leverage.crypto` caps them all.
-export const MARKET_CATEGORY = 'crypto'
+// A challenge market's category, which keys the plan's leverage cap: MonFunded liquidity's forex
+// pairs ('fx:EURUSD') are forex, Perpl's perps ('perpl:BTC') crypto.
+export const categoryOf = (market: string) => (market.startsWith('fx:') ? 'forex' : 'crypto')
+// Where a market's quotes and fills come from, as the coach names it.
+export const sourceOf = (market: string) => (market.startsWith('fx:') ? 'MonFunded liquidity' : 'Perpl')
 // The coach warns when an adverse move smaller than this (in %) fails the account.
 export const CAUTION_MOVE_PCT = 1
 

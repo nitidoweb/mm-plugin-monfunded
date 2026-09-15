@@ -32,6 +32,15 @@ test('markets: a symbol or a perpl: id, normalised to the id', () => {
   for (const bad of ['', 'B', 'BTC-USD', 'perpl:', 'kuru:BTC', 'x'.repeat(11)]) refused(() => parseMarket(bad))
 })
 
+test('markets: a forex pair with the dollar on one side, as EURUSD, eur/usd or fx:USDJPY', () => {
+  assert.equal(parseMarket('EURUSD'), 'fx:EURUSD')
+  assert.equal(parseMarket('eur/usd'), 'fx:EURUSD')
+  assert.equal(parseMarket('fx:USDJPY'), 'fx:USDJPY')
+  // Without the dollar it is no pair MonFunded liquidity quotes: read as a Perpl symbol, which the server doesn't list.
+  assert.equal(parseMarket('EURGBP'), 'perpl:EURGBP')
+  refused(() => parseMarket('EUR/GBP'))
+})
+
 test('dollars: plain numbers, at most two decimals, at least the minimum', () => {
   assert.equal(parseUsd('notional', '250', 10), 250)
   assert.equal(parseUsd('notional', '99.5', 10), 99.5)

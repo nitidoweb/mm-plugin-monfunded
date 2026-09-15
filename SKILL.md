@@ -68,7 +68,10 @@ Trading is simulated, so `order` and `close` sign nothing.
 
 - `--account <id>` picks the account when the wallet has more than one running (`coach`, `order`,
   `close`, `withdraw`).
-- Markets: BTC, ETH, SOL, MON, HYPE, ZEC, LIT, PUMP (Perpl's perpetuals, all crypto).
+- Markets: BTC, ETH, SOL, MON, HYPE, ZEC, LIT, PUMP (Perpl's perpetuals) and the forex pairs
+  EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, USDMXN (MonFunded liquidity, the firm's own, in
+  the challenge only; closed at weekends). Leverage: the plan's cap for the category, 15x on crypto
+  (never above Perpl's own maximum for the market) and 50x on forex.
 - Sizes: 5k, 10k, 25k, 50k, 100k, 200k, 400k. Risk: `tight` (3 % daily loss, 3 % total drawdown,
   9 % target, cheaper) or `medium` (4 %, 7 %, 10 %). `status` lists each plan's fee and rules.
 - Dollars are plain numbers with at most two decimals (`--notional 250.50`); ids are copied from

@@ -42,11 +42,14 @@ export function parsePayoutToken(raw: string): PayoutToken {
   return coin
 }
 
-// A challenge market: its symbol (BTC) or its id (perpl:BTC). Whether it trades is the server's
-// list (/challenge/prices).
+// A challenge market: a Perpl perp by its symbol (BTC) or id (perpl:BTC), or a forex pair of
+// MonFunded liquidity with the US dollar on one side, as EURUSD, EUR/USD or fx:EURUSD. Whether it
+// trades is the server's list (/challenge/prices).
 export function parseMarket(raw: string): string {
+  const pair = /^(?:fx:)?([a-z]{3})\/?([a-z]{3})$/i.exec(raw.trim())
+  if (pair && [pair[1], pair[2]].some((c) => c.toUpperCase() === 'USD')) return `fx:${(pair[1] + pair[2]).toUpperCase()}`
   const m = /^(?:perpl:)?([a-z0-9]{2,10})$/i.exec(raw.trim())
-  if (!m) throw invalid('market', `"${raw}" is not a market symbol.`, 'Use BTC, ETH, SOL, MON, HYPE, ZEC, LIT or PUMP.')
+  if (!m) throw invalid('market', `"${raw}" is not a market symbol.`, 'Use a Perpl perp (BTC, ETH, SOL, MON, HYPE, ZEC, LIT or PUMP) or a forex pair (EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF or USDMXN).')
   return `perpl:${m[1].toUpperCase()}`
 }
 

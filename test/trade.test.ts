@@ -13,9 +13,9 @@ const BTC_LONG = { market: 'perpl:BTC', side: 'long', notional: 1000, leverage: 
 
 test('coach blocks what the server would refuse: the leverage cap (plan’s or Perpl’s), a closed or unknown market, margin', async () => {
   const { d } = makeDeps(fakeApi(routes()).api)
-  const lev = await coach(d, { ...BTC_LONG, leverage: 6 })
+  const lev = await coach(d, { ...BTC_LONG, leverage: 16 })
   assert.equal(lev.verdict, 'blocked')
-  assert.match(lev.summary[0], /6x is above the 5x cap on BTC \(the plan allows 5x, Perpl 15x\)/)
+  assert.match(lev.summary[0], /16x is above the 15x cap on BTC \(the plan allows 15x, Perpl 15x\)/)
   const lit = await coach(d, { ...BTC_LONG, market: 'perpl:LIT', leverage: 4 })
   assert.match(lit.summary[0], /4x is above the 3x cap on LIT/)
   const zec = await coach(d, { ...BTC_LONG, market: 'perpl:ZEC' })
@@ -26,6 +26,16 @@ test('coach blocks what the server would refuse: the leverage cap (plan’s or P
   assert.equal(doge.risk, undefined)
   const big = await coach(d, { ...BTC_LONG, notional: 30_000, leverage: 5 })
   assert.equal(big.checks.find((c) => c.check === 'margin')?.ok, false)
+})
+
+test('coach on a forex pair: the plan’s forex cap (no venue cap on top), MonFunded liquidity named as the source', async () => {
+  const { d } = makeDeps(fakeApi(routes()).api)
+  const over = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 51 })
+  assert.equal(over.verdict, 'blocked')
+  assert.match(over.summary[0], /51x is above the 50x cap on USD\/JPY \(the plan allows 50x\)\./)
+  const fine = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 50 })
+  assert.equal(fine.checks.find((c) => c.check === 'leverage')?.ok, true)
+  assert.ok(fine.summary.some((line) => line.includes('It fills at the next MonFunded liquidity quote, near 155.108 (the ask)')), fine.summary.join(' | '))
 })
 
 test('coach measures the move that fails the account and the one that liquidates the position', async () => {
@@ -69,7 +79,7 @@ test('order refuses without sending: over the cap, no account, or several withou
   ]
   for (const [r, expected] of cases) {
     const { api, calls } = fakeApi(r)
-    await assert.rejects(order(makeDeps(api).d, { ...BTC_LONG, leverage: expected === 'LEVERAGE_TOO_HIGH' ? 6 : 2 }), code(expected))
+    await assert.rejects(order(makeDeps(api).d, { ...BTC_LONG, leverage: expected === 'LEVERAGE_TOO_HIGH' ? 16 : 2 }), code(expected))
     assert.ok(!calls.some((c) => c.path.endsWith('/orders')), expected)
   }
 })

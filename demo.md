@@ -23,10 +23,18 @@ The test runs three pieces:
 - The plugin's code for every command, with a stand-in for MetaMask that signs with a throwaway
   key.
 
-It prints each step as the terminal session it stands for, and it checks the chain after every
-payment. Here is one run (ids, addresses and times change every time):
+The plugin reaches the local server in developer mode (`MONFUNDED_DEV=1` with `MONFUNDED_API_URL`),
+the only way it talks to anything but monfunded.com, so it prints the developer-mode warning first
+and trusts the local contract instead of the one it pins. It prints each step as the terminal
+session it stands for, and it checks the chain after every payment. Here is one run (ids,
+addresses and times change every time):
 
 ```text
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+MONFUNDED_DEV=1: DEVELOPER MODE. The plugin talks to http://127.0.0.1:4417, not https://monfunded.com,
+and trusts that server as it is: whatever contract and MON book it names get paid.
+Use it only with a test server and test funds, never with real money.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 MonFunded agent plugin, end to end: in-memory Monad (contract 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f), MonFunded server on http://127.0.0.1:4417, MetaMask stand-in for 0xC9AD2AE47243FF0f2bCC634B63d2E1159c284231.
 
 $ mm monfunded status
@@ -173,8 +181,29 @@ mm monfunded withdraw --amount 20 --token usdc --yes         # once funded and i
 mm monfunded claim --withdrawal <id> --yes                   # only if a payout hasn't arrived
 ```
 
-Two things to know:
+`login` asks MetaMask to sign one message, a Sign-In with Ethereum (EIP-4361) message the plugin
+checks field by field first (monfunded.com, your wallet, Monad, a fresh nonce, five minutes of
+validity, nothing else):
 
+```text
+monfunded.com wants you to sign in with your Ethereum account:
+<your wallet>
+
+Sign in to the MonFunded Challenge.
+
+URI: https://monfunded.com
+Version: 1
+Chain ID: 143
+Nonce: <32 hex characters>
+Issued At: <now>
+Expiration Time: <now + 5 minutes>
+```
+
+Three things to know:
+
+- **The plugin pays MonFunded's contract only.** The address is written into the plugin, not taken
+  from the server, and so is Kuru's MON_USDC book for fees in MON. A plugin released before the
+  contract was deployed pays nothing and asks you to update it (`PLUGIN_OUTDATED`).
 - **Guard Mode may ask for your approval.** It can ask before MetaMask sends the fee or the
   claim, by a push notification or an email. The command waits, and prints `[AWAITING_MFA]` for
   agents to spot.

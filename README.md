@@ -113,7 +113,34 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   MonFunded's USDC and AUSD, and the wallet holds enough. It approves exactly the fee, never more.
   If registering the account fails after paying, the error gives the command that registers it
   without paying again (`--entry-tx`).
-- **Only MonFunded's sign-in message is signed.** `login` refuses any other text from the server.
+- **Only MonFunded's sign-in is signed.** `login` signs a Sign-In with Ethereum (EIP-4361) message
+  and checks every field first: the domain and URI are the API's own (`monfunded.com`,
+  `https://monfunded.com`), the address is the active wallet, the chain is Monad (143), the nonce
+  is the one the server just gave (it goes back with the signature and works once), the message
+  was issued within 5 minutes of your clock and expires within 10, and there is nothing else in it
+  (no resources, no request id, no extra text). Anything else is refused unsigned. It looks like
+  this:
+
+  ```text
+  monfunded.com wants you to sign in with your Ethereum account:
+  0xC9AD2AE47243FF0f2bCC634B63d2E1159c284231
+
+  Sign in to the MonFunded Challenge.
+
+  URI: https://monfunded.com
+  Version: 1
+  Chain ID: 143
+  Nonce: 3f1c0a9e5b7d4c2e8a6f1b0d9c7e5a3b
+  Issued At: 2026-09-15T12:00:00.000Z
+  Expiration Time: 2026-09-15T12:05:00.000Z
+  ```
+- **Pinned to MonFunded.** The plugin talks to `https://monfunded.com` and pays only the contract
+  written into the plugin (`MONFUNDED_CONTRACT` in `src/lib/constants.ts`), whatever the API says.
+  A fee in MON is swapped only on Kuru's MON_USDC book (`0x065c9d28e428a0db40191a54d33d5b7c71a9c394`),
+  and everything runs on Monad (143). Until MonFunded's contract is deployed the pin is empty: this
+  version pays no contract, and once the API names one it asks you to update the plugin
+  (`PLUGIN_OUTDATED`). Another server needs the developer flag (Settings), which trusts that server
+  as it is and says so loudly on every command.
 - **Payouts go to your wallet only.** The contract pays the wallet that owns the account, with
   MonFunded's signature over that wallet, the coin and the amount.
 - **The session stays private.** The MonFunded session cookie is kept in
@@ -123,7 +150,8 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 
 | Variable | What it does |
 |---|---|
-| `MONFUNDED_API_URL` | Talk to another MonFunded server, e.g. `http://localhost:4417` for local testing. Only https, or http on this machine. |
+| `MONFUNDED_API_URL` | Talk to another MonFunded server, e.g. `http://localhost:4417` for local testing: only https, or http on this machine, and only with `MONFUNDED_DEV=1`. |
+| `MONFUNDED_DEV` | `1` turns on developer mode: `MONFUNDED_API_URL` is honored, and that server's contract and MON book are trusted as it names them. Every command then prints a warning on stderr. For test servers and test funds only; never set it for real money. |
 | `MONFUNDED_AGENT_HOME` | Where the session file lives (default `~/.monfunded`). |
 
 ## Troubleshooting
@@ -131,6 +159,12 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 - **`AUTH_FAILED … run mm login`**: MetaMask Agent Wallet itself isn't signed in: `mm login`.
 - **`NOT_SIGNED_IN`** or **`WRONG_WALLET`**: `mm monfunded login` (again after switching wallets).
 - **`ENTRIES_CLOSED`**: MonFunded's contract isn't deployed on Monad yet; nothing was paid.
+- **`PLUGIN_OUTDATED`**: MonFunded has deployed a contract this version doesn't know: update the
+  plugin. Nothing was signed.
+- **`UNEXPECTED_MESSAGE`**: the server's sign-in message failed a check (the message says which).
+  Check the computer's clock (it must be within 5 minutes), then `mm monfunded login` again.
+- **`INVALID_API_URL`**: `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or isn't an origin.
+  Unset it to use monfunded.com.
 - **`[AWAITING_MFA]`**: Guard Mode wants your approval: approve it in MetaMask (phone or email), and
   see `mm wallet requests list`.
 - **`PLUGIN_BETA_DISABLED`**: turn plugins on (Install, step 1).
@@ -138,7 +172,7 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 ## For developers
 
 ```sh
-npm test            # 57 unit tests: flows, API client, session file, signer, with a mocked MetaMask executor
+npm test            # 63 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
 npm run test:e2e    # the whole flow against a local MonFunded server and the real contract (see below)
 npm run typecheck
 npm run build
@@ -147,8 +181,14 @@ npm run build
 `npm run test:e2e` needs `npm install` at the repository root too: it starts MonFunded's own server
 (`server/challenge.mjs`) on port 4417, runs the compiled contract (`contracts/out`) in an in-memory
 EVM, and drives the plugin's flows with a stand-in for MetaMask's executor, checking the chain after
-every payment. `npm run test:e2e -- --serve` uses the production `server/serve.mjs` instead (after
-`npm run build` at the root). The repository's `npm run lint` covers this folder.
+every payment. It reaches the server the way a developer would, in developer mode
+(`MONFUNDED_DEV=1` with `MONFUNDED_API_URL`), so the local contract is trusted. `npm run test:e2e --
+--serve` uses the production `server/serve.mjs` instead (after `npm run build` at the root). The
+repository's `npm run lint` covers this folder.
+
+When MonFunded deploys its contract: set `MONFUNDED_CONTRACT` in `src/lib/constants.ts` to the
+address `scripts/deploy-contract.mjs` printed, raise the version in `package.json` and
+`src/lib/constants.ts`, rebuild and publish. Until then the plugin pays no contract.
 
 Layout:
 

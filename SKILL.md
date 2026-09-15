@@ -41,6 +41,9 @@ Trading is simulated, so `order` and `close` sign nothing.
    a command with `--entry-tx`: run exactly that, never `buy` again.
 7. **Keep secrets out.** Never print or copy the session file (`~/.monfunded/agent-session.json`),
    and never ask for a recovery phrase or a private key. Nothing here needs them.
+8. **Talk to monfunded.com only.** Never set `MONFUNDED_DEV` or `MONFUNDED_API_URL` yourself: they
+   point the plugin at another server and trust whatever contract it names. If a command prints
+   `MONFUNDED_DEV=1: DEVELOPER MODE` on stderr, stop and tell the user before any payment or claim.
 
 ## Before the first command
 
@@ -55,7 +58,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 | Command | What it does | Signs |
 |---|---|---|
 | `mm monfunded status` | Whether entries are open and the plans; once signed in, every running account with its rule meters, positions and withdrawals | Nothing |
-| `mm monfunded login` | Signs MonFunded's sign-in message and keeps a 7-day session | A message, no gas |
+| `mm monfunded login` | Signs MonFunded's Sign-In with Ethereum message (for monfunded.com, the active wallet and Monad; the plugin checks every field) and keeps a 7-day session | A message, no gas |
 | `mm monfunded buy --size 5k --risk tight --pay usdc` | Pays an assessment's fee in `usdc`, `ausd` or `mon` | Transactions, with `--yes` |
 | `mm monfunded coach --market BTC --side long --notional 1000 --leverage 2` | Checks an intended order against the rules; sends nothing | Nothing |
 | `mm monfunded order --market BTC --side long --notional 1000 --leverage 2` | Opens a position and waits for its fill | Nothing |
@@ -121,8 +124,13 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `ALREADY_ACTIVE` | An assessment is already running | Finish it first; nothing was paid |
 | `UNKNOWN_PLAN` | No plan with that size and risk | Pick one from `status` |
 | `INSUFFICIENT_FUNDS`, `NO_GAS` | Not enough of the coin, or no MON for gas | Ask the user to fund the wallet (`mm wallet add-fund`) |
-| `FEE_MISMATCH`, `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists | Stop and tell the user; nothing was paid |
+| `FEE_MISMATCH`, `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists, or the contract isn't the one the plugin pins | Stop and tell the user; nothing was paid |
+| `PLUGIN_OUTDATED` | MonFunded names a contract this version of the plugin doesn't know | Tell the user to update the plugin; nothing was signed |
+| `UNEXPECTED_MESSAGE` | The sign-in message failed a check (the message says which) | Tell the user; if it names the clock, they should fix it. Nothing was signed |
+| `INVALID_API_URL` | `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or is malformed | Tell the user; don't set either variable yourself |
 | `ENTRY_NOT_VERIFIED`, `REGISTER_FAILED` | Paid, but the account isn't registered yet | Run the `--entry-tx` command from the hint |
+| `ENTRY_UNDERPAID`, `ENTRY_EXPIRED` | Paid, but MonFunded can't start the account with it (the plan's price rose after the payment, or the entry is over 3 days old) | Don't pay again; tell the user to contact MonFunded with the entry transaction |
+| `ORDER_LIMIT` | The account placed the most orders MonFunded takes in a UTC day | Stop sending orders until 00:00 UTC (the message says when) |
 | `MON_UNAVAILABLE`, `KURU_UNAVAILABLE`, `NO_LIQUIDITY`, `MON_BOOK_MISMATCH` | The fee can't be priced in MON now | Pay in `usdc` or `ausd` |
 | `NO_ACCOUNT`, `WHICH_ACCOUNT`, `NOT_FOUND`, `ACCOUNT_ENDED` | No such running account, or several | `status`, then `--account <id>` |
 | `MARKET_CLOSED`, `UNKNOWN_MARKET` | The market can't take orders now | Wait a few seconds, or another market |

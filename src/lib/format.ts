@@ -17,5 +17,5 @@ export const pct = (n: number) => `${n.toLocaleString('en-US', { maximumFraction
 // "Tight $5,000", or the name the dashboard gave the plan.
 export const planName = (tier: Pick<Tier, 'name' | 'risk' | 'size'>) => tier.name ?? `${tier.risk === 'tight' ? 'Tight' : 'Medium'} $${tier.size.toLocaleString('en-US')}`
 export const txUrl = (hash: Hex) => `${EXPLORER_TX}${hash}`
-// perpl:BTC → BTC, fx:EURUSD → EUR/USD.
-export const symbolOf = (marketId: string) => marketId.replace(/^perpl:/, '').replace(/^fx:([A-Z]{3})([A-Z]{3})$/, '$1/$2')
+// perpl:BTC → BTC, fx:EURUSD → EUR/USD, fx:GER30 → GER30.
+export const symbolOf = (marketId: string) => marketId.replace(/^perpl:/, '').replace(/^fx:([A-Z]{3})([A-Z]{3})$/, '$1/$2').replace(/^fx:/, '')

@@ -42,14 +42,18 @@ export function parsePayoutToken(raw: string): PayoutToken {
   return coin
 }
 
-// A challenge market: a Perpl perp by its symbol (BTC) or id (perpl:BTC), or a forex pair of
-// MonFunded liquidity with the US dollar on one side, as EURUSD, EUR/USD or fx:EURUSD. Whether it
-// trades is the server's list (/challenge/prices).
+// A challenge market: a Perpl perp by its symbol (BTC) or id (perpl:BTC), or an instrument of
+// MonFunded liquidity by its code or id: a six-letter pair or commodity (EURGBP, EUR/GBP, XAUUSD) or
+// an index ending in its number (GER30, SPX500), with or without fx:. Perpl's symbols are shorter and
+// end in a letter. Whether it trades is the server's list (/challenge/prices).
 export function parseMarket(raw: string): string {
-  const pair = /^(?:fx:)?([a-z]{3})\/?([a-z]{3})$/i.exec(raw.trim())
-  if (pair && [pair[1], pair[2]].some((c) => c.toUpperCase() === 'USD')) return `fx:${(pair[1] + pair[2]).toUpperCase()}`
-  const m = /^(?:perpl:)?([a-z0-9]{2,10})$/i.exec(raw.trim())
-  if (!m) throw invalid('market', `"${raw}" is not a market symbol.`, 'Use a Perpl perp (BTC, ETH, SOL, MON, HYPE, ZEC, LIT or PUMP) or a forex pair (EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF or USDMXN).')
+  const text = raw.trim()
+  const pair = /^(?:fx:)?([a-z]{3})\/?([a-z]{3})$/i.exec(text)
+  if (pair) return `fx:${(pair[1] + pair[2]).toUpperCase()}`
+  const fx = /^(?:fx:([a-z0-9]{2,12})|([a-z]{1,6}\d{2,3}))$/i.exec(text)
+  if (fx) return `fx:${(fx[1] ?? fx[2]).toUpperCase()}`
+  const m = /^(?:perpl:)?([a-z0-9]{2,10})$/i.exec(text)
+  if (!m) throw invalid('market', `"${raw}" is not a market symbol.`, 'Use a Perpl perp (BTC, ETH, SOL, MON, HYPE, ZEC, LIT or PUMP) or a MonFunded liquidity instrument (EURUSD, EURGBP, XAUUSD, GER30, …).')
   return `perpl:${m[1].toUpperCase()}`
 }
 

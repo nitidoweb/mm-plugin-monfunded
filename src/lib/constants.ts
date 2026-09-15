@@ -50,9 +50,16 @@ export const AUSD = '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a'
 export const MIN_NOTIONAL_USD = 10
 export const MIN_HOLD_MS = 60_000
 export const LIQUIDATION_LOSS = 0.9
-// A challenge market's category, which keys the plan's leverage cap: MonFunded liquidity's forex
-// pairs ('fx:EURUSD') are forex, Perpl's perps ('perpl:BTC') crypto.
-export const categoryOf = (market: string) => (market.startsWith('fx:') ? 'forex' : 'crypto')
+// A challenge market's category, which keys the plan's leverage cap: Perpl's perps ('perpl:BTC') are
+// crypto; MonFunded liquidity's instruments forex, metal, baseMetal, energy or index, as the server's
+// catalogue classifies them (scripts/fx-catalog.mjs): a commodity by its asset code, any other
+// six-letter code a currency pair, the rest indices.
+const COMMODITIES: Record<string, string> = { XAU: 'metal', XAG: 'metal', XPT: 'metal', XPD: 'metal', XCU: 'baseMetal', XAL: 'baseMetal', XZN: 'baseMetal', XNI: 'baseMetal', XPB: 'baseMetal', XTI: 'energy', XBR: 'energy', XNG: 'energy' }
+export function categoryOf(market: string): string {
+  const code = /^fx:([A-Z0-9]+)$/.exec(market)?.[1]
+  if (!code) return 'crypto'
+  return /^[A-Z]{6}$/.test(code) ? (COMMODITIES[code.slice(0, 3)] ?? 'forex') : 'index'
+}
 // Where a market's quotes and fills come from, as the coach names it.
 export const sourceOf = (market: string) => (market.startsWith('fx:') ? 'MonFunded liquidity' : 'Perpl')
 // The coach warns when an adverse move smaller than this (in %) fails the account.

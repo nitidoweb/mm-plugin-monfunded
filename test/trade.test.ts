@@ -15,7 +15,7 @@ test('coach blocks what the server would refuse: the leverage cap (plan’s or P
   const { d } = makeDeps(fakeApi(routes()).api)
   const lev = await coach(d, { ...BTC_LONG, leverage: 16 })
   assert.equal(lev.verdict, 'blocked')
-  assert.match(lev.summary[0], /16x is above the 15x cap on BTC \(the plan allows 15x, Perpl 15x\)/)
+  assert.match(lev.summary[0], /16x is above the 15x cap on BTC \(the plan allows 100x, Perpl 15x\)/)
   const lit = await coach(d, { ...BTC_LONG, market: 'perpl:LIT', leverage: 4 })
   assert.match(lit.summary[0], /4x is above the 3x cap on LIT/)
   const zec = await coach(d, { ...BTC_LONG, market: 'perpl:ZEC' })
@@ -28,12 +28,12 @@ test('coach blocks what the server would refuse: the leverage cap (plan’s or P
   assert.equal(big.checks.find((c) => c.check === 'margin')?.ok, false)
 })
 
-test('coach on a forex pair: the plan’s forex cap (no venue cap on top), MonFunded liquidity named as the source', async () => {
+test('coach on a forex pair: the plan’s forex cap and MonFunded liquidity’s own, named as the source', async () => {
   const { d } = makeDeps(fakeApi(routes()).api)
-  const over = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 51 })
+  const over = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 31 })
   assert.equal(over.verdict, 'blocked')
-  assert.match(over.summary[0], /51x is above the 50x cap on USD\/JPY \(the plan allows 50x\)\./)
-  const fine = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 50 })
+  assert.match(over.summary[0], /31x is above the 30x cap on USD\/JPY \(the plan allows 30x, MonFunded liquidity 30x\)\./)
+  const fine = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 30 })
   assert.equal(fine.checks.find((c) => c.check === 'leverage')?.ok, true)
   assert.ok(fine.summary.some((line) => line.includes('It fills at the next MonFunded liquidity quote, near 155.108 (the ask)')), fine.summary.join(' | '))
 })

@@ -24,7 +24,8 @@ async function setup(d: Deps, input: OrderInput): Promise<Setup> {
   const [me, prices] = await Promise.all([d.api.me(), d.api.prices()])
   const account = pickAccount(me, input.account)
   const quote = prices[input.market]
-  // The plan's cap for the market's category (crypto or forex); a Perpl quote adds Perpl's own.
+  // The plan's cap for the market's category; the quote adds the market's own (Perpl's maximum, or
+  // MonFunded liquidity's category cap).
   const planCap = account.rules.leverage[categoryOf(input.market)] ?? 1
   const perplCap = quote?.maxLeverage
   // Free margin: equity less the margin every pending, open and closing position locks.
@@ -36,8 +37,8 @@ async function setup(d: Deps, input: OrderInput): Promise<Setup> {
 function refusal(input: OrderInput, s: Setup): PluginError | undefined {
   const symbol = symbolOf(input.market)
   if (!s.quote) return new PluginError('UNKNOWN_MARKET', `The challenge has no ${symbol} market.`, `Markets: ${Object.keys(s.prices).map(symbolOf).join(', ')}.`)
-  if (!s.quote.tradable) return new PluginError('MARKET_CLOSED', `${symbol} is not tradable right now (its market is closed, a forex pair outside its hours, or its quote is stale or broken).`, 'Try again later, or pick another market.')
-  if (input.leverage > s.cap) return new PluginError('LEVERAGE_TOO_HIGH', `${input.leverage}x is above the ${s.cap}x cap on ${symbol} (the plan allows ${s.planCap}x${s.perplCap ? `, Perpl ${s.perplCap}x` : ''}).`, `Pass --leverage ${s.cap} or less.`)
+  if (!s.quote.tradable) return new PluginError('MARKET_CLOSED', `${symbol} is not tradable right now (its market is closed, a MonFunded liquidity instrument outside its hours or paused, or its quote is stale or broken).`, 'Try again later, or pick another market.')
+  if (input.leverage > s.cap) return new PluginError('LEVERAGE_TOO_HIGH', `${input.leverage}x is above the ${s.cap}x cap on ${symbol} (the plan allows ${s.planCap}x${s.perplCap ? `, ${sourceOf(input.market)} ${s.perplCap}x` : ''}).`, `Pass --leverage ${s.cap} or less.`)
   if (input.notional < MIN_NOTIONAL_USD) return new PluginError('SIZE_TOO_SMALL', `Positions start at ${usd(MIN_NOTIONAL_USD)} of notional.`, `Pass --notional ${MIN_NOTIONAL_USD} or more.`)
   if (s.margin > s.freeMargin) return new PluginError('INSUFFICIENT_MARGIN', `This position needs ${usd(s.margin)} of margin (notional ÷ leverage) and the account has ${usd(s.freeMargin)} free.`, 'Lower --notional, raise --leverage within the cap, or close a position first.')
   return undefined
@@ -78,7 +79,7 @@ export async function coach(d: Deps, input: OrderInput) {
   const q = s.quote
   const checks = [
     { check: 'market', ok: !!q?.tradable, detail: !q ? `the challenge has no ${symbol} market` : q.tradable ? `${symbol} is open (mark ${q.price})` : `${symbol} is not tradable right now` },
-    { check: 'leverage', ok: input.leverage <= s.cap, detail: `${input.leverage}x, cap ${s.cap}x (plan ${s.planCap}x${s.perplCap ? `, Perpl ${s.perplCap}x` : ''})` },
+    { check: 'leverage', ok: input.leverage <= s.cap, detail: `${input.leverage}x, cap ${s.cap}x (plan ${s.planCap}x${s.perplCap ? `, ${sourceOf(input.market)} ${s.perplCap}x` : ''})` },
     { check: 'size', ok: input.notional >= MIN_NOTIONAL_USD, detail: `${usd(input.notional)} (minimum ${usd(MIN_NOTIONAL_USD)})` },
     { check: 'margin', ok: s.margin <= s.freeMargin, detail: `${usd(s.margin)} needed, ${usd(s.freeMargin)} free` },
   ]

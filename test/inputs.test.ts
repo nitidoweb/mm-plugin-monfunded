@@ -1,7 +1,9 @@
 // Every flag's parser: the shapes it takes, the ones it refuses.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { categoryOf } from '../src/lib/constants.ts'
 import { PluginError } from '../src/lib/errors.ts'
+import { symbolOf } from '../src/lib/format.ts'
 import { apiBase, apiTarget, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseRisk, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
 
 const refused = (run: () => unknown, code = 'INVALID_INPUT') => assert.throws(run, (e) => e instanceof PluginError && e.code === code)
@@ -32,13 +34,22 @@ test('markets: a symbol or a perpl: id, normalised to the id', () => {
   for (const bad of ['', 'B', 'BTC-USD', 'perpl:', 'kuru:BTC', 'x'.repeat(11)]) refused(() => parseMarket(bad))
 })
 
-test('markets: a forex pair with the dollar on one side, as EURUSD, eur/usd or fx:USDJPY', () => {
+test('markets: a MonFunded liquidity instrument by its code or id, a pair or commodity with or without the slash, an index by its number', () => {
   assert.equal(parseMarket('EURUSD'), 'fx:EURUSD')
   assert.equal(parseMarket('eur/usd'), 'fx:EURUSD')
   assert.equal(parseMarket('fx:USDJPY'), 'fx:USDJPY')
-  // Without the dollar it is no pair MonFunded liquidity quotes: read as a Perpl symbol, which the server doesn't list.
-  assert.equal(parseMarket('EURGBP'), 'perpl:EURGBP')
-  refused(() => parseMarket('EUR/GBP'))
+  assert.equal(parseMarket('EURGBP'), 'fx:EURGBP')
+  assert.equal(parseMarket('EUR/GBP'), 'fx:EURGBP')
+  assert.equal(parseMarket('xauusd'), 'fx:XAUUSD')
+  assert.equal(parseMarket('GER30'), 'fx:GER30')
+  assert.equal(parseMarket('fx:SPX500'), 'fx:SPX500')
+  // A Perpl symbol is shorter and ends in a letter.
+  assert.equal(parseMarket('HYPE'), 'perpl:HYPE')
+})
+
+test('categories and symbols: each market the category its plan cap is keyed by, and its symbol', () => {
+  assert.deepEqual(['perpl:BTC', 'fx:EURGBP', 'fx:XAUUSD', 'fx:XCUUSD', 'fx:XTIUSD', 'fx:GER30'].map(categoryOf), ['crypto', 'forex', 'metal', 'baseMetal', 'energy', 'index'])
+  assert.deepEqual(['perpl:BTC', 'fx:EURGBP', 'fx:GER30'].map(symbolOf), ['BTC', 'EUR/GBP', 'GER30'])
 })
 
 test('dollars: plain numbers, at most two decimals, at least the minimum', () => {

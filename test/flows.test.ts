@@ -9,7 +9,7 @@ import { PluginError } from '../src/lib/errors.ts'
 import type { ExecutorRequest } from '../src/lib/signer.ts'
 import { status } from '../src/lib/status.ts'
 import type { Position } from '../src/lib/types.ts'
-import { account, BASE, config, CONTRACT, COOKIE, fakeApi, fakeChain, makeDeps, MON_MARKET, PRICES, progress, reply, response, T0, wallet } from './fakes.ts'
+import { account, BASE, config, CONTRACT, COOKIE, fakeApi, fakeChain, makeDeps, MON_MARKET, PRICES, progress, reply, response, T0, TIERS, wallet } from './fakes.ts'
 
 const code = (c: string) => (e: unknown) => e instanceof PluginError && e.code === c
 const txOf = (r: ExecutorRequest | undefined) => {
@@ -120,10 +120,47 @@ test('MON: the quoted MON goes to enterWithMon with the fee as the floor, keepin
   await assert.rejects(buy(makeDeps(noBook.api, { yes: true, kuru }).d, { ...TIGHT_5K, pay: 'MON' }), code('MON_UNAVAILABLE'))
 })
 
+test('a plan being repriced (the contract’s fee isn’t the listed one, either way) is refused in every coin before anything is signed', async () => {
+  const { api } = fakeApi(buyRoutes())
+  for (const fee of [29_000_000n, 31_000_000n])
+    for (const pay of ['USDC', 'AUSD', 'MON'] as const) {
+      const { d, executor } = makeDeps(api, { yes: true, kuru, chain: fakeChain({ fee }) })
+      await assert.rejects(buy(d, { ...TIGHT_5K, pay }), (e) => code('FEE_CHANGING')(e) && /being updated on the contract \(it charges \$\d+\.00; MonFunded lists \$30\.00\), so nothing was paid\./.test((e as Error).message) && /Try again in a minute/.test((e as PluginError).hint), `${pay} at ${fee}`)
+      assert.equal(executor.requests.length, 0, `${pay} at ${fee}`)
+    }
+})
+
+test('a repricing while the payment is shown, or between the approval and the entry, stops before the next signature', async () => {
+  // The contract is repriced while the user reads the plan: nothing is signed.
+  const one = makeDeps(fakeApi(buyRoutes()).api, { yes: true })
+  const confirm = one.d.confirm
+  one.d.confirm = async (plan) => {
+    one.chain.state.fee = 35_000_000n
+    return confirm(plan)
+  }
+  await assert.rejects(buy(one.d, TIGHT_5K), code('FEE_CHANGING'))
+  assert.equal(one.executor.requests.length, 0)
+  // The server's plan is repriced once the approval is sent (its third config read): the entry
+  // never goes, and nothing is registered.
+  let reads = 0
+  const repriced = fakeApi(buyRoutes({ 'GET /config': () => (++reads >= 3 ? config({ tiers: TIERS.map((t) => (t.id === 'tight-5000' ? { ...t, feeUsd: 35 } : t)) }) : config()) }))
+  const two = makeDeps(repriced.api, { yes: true })
+  await assert.rejects(buy(two.d, TIGHT_5K), (e) => code('FEE_CHANGING')(e) && /MonFunded lists \$35\.00/.test((e as Error).message))
+  assert.equal(two.executor.requests.length, 1, 'the approval only')
+  assert.equal(txOf(two.executor.requests[0]).to, USDC)
+  assert.ok(!repriced.calls.some((c) => c.path === '/enter'))
+  // A plan paused meanwhile: no entry either.
+  let seen = 0
+  const paused = fakeApi(buyRoutes({ 'GET /config': () => (++seen >= 2 ? config({ tiers: TIERS.map((t) => ({ ...t, enabled: t.id !== 'tight-5000' })) }) : config()) }))
+  const three = makeDeps(paused.api, { yes: true })
+  await assert.rejects(buy(three.d, TIGHT_5K), code('ENTRIES_CLOSED'))
+  assert.equal(three.executor.requests.length, 0)
+})
+
 test('buy refuses a contract that charges another fee or takes other coins, a short wallet, no gas', async () => {
   const { api } = fakeApi(buyRoutes())
   const cases: [Parameters<typeof fakeChain>[0], string][] = [
-    [{ fee: 31_000_000n }, 'FEE_MISMATCH'],
+    [{ fee: 31_000_000n }, 'FEE_CHANGING'],
     [{ coins: { usdc: CONTRACT, ausd: AUSD } }, 'BAD_CONTRACT'],
     [{ usdc: 29_999_999n }, 'INSUFFICIENT_FUNDS'],
     [{ mon: 0n }, 'NO_GAS'],

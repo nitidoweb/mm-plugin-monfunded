@@ -124,7 +124,8 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `ALREADY_ACTIVE` | An assessment is already running | Finish it first; nothing was paid |
 | `UNKNOWN_PLAN` | No plan with that size and risk | Pick one from `status` |
 | `INSUFFICIENT_FUNDS`, `NO_GAS` | Not enough of the coin, or no MON for gas | Ask the user to fund the wallet (`mm wallet add-fund`) |
-| `FEE_MISMATCH`, `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists, or the contract isn't the one the plugin pins | Stop and tell the user; nothing was paid |
+| `FEE_CHANGING` | The plan's price is being updated: the contract and MonFunded disagree on its fee for now | Wait a minute and run the same command again (without `--yes` first); nothing was paid |
+| `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists, or the contract isn't the one the plugin pins | Stop and tell the user; nothing was paid |
 | `PLUGIN_OUTDATED` | MonFunded names a contract this version of the plugin doesn't know | Tell the user to update the plugin; nothing was signed |
 | `UNEXPECTED_MESSAGE` | The sign-in message failed a check (the message says which) | Tell the user; if it names the clock, they should fix it. Nothing was signed |
 | `INVALID_API_URL` | `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or is malformed | Tell the user; don't set either variable yourself |

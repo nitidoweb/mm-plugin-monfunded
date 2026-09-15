@@ -3,14 +3,15 @@
 // checked before anything is signed: the session is this wallet's (the entry must be registered
 // to the wallet that paid), no assessment is running (one at a time), the contract is deployed,
 // charges exactly the listed fee and takes the two known coins, and the wallet holds the coin and
-// gas. `--entry-tx` registers an entry already paid, without paying again.
+// gas; and right before each transaction, the server and the contract must still price the plan
+// as confirmed. `--entry-tx` registers an entry already paid, without paying again.
 import { AUSD, ENTRY_ATTEMPTS, MON_RESERVE_WEI, USDC } from './constants.ts'
 import { approveCall, enterCall, enterWithMonCall, usd6, type Call } from './chain.ts'
 import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
 import { coin, mon, pct, planName, txUrl, usd } from './format.ts'
 import { quoteMonFee } from './kuru.ts'
-import type { Hex, PayWith, Risk, Tier } from './types.ts'
+import type { Address, Hex, PayWith, Risk, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
 export type BuyInput = { size: number; risk: Risk; pay: PayWith; entryTx?: Hex }
@@ -20,6 +21,21 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const NEXT = 'Nothing was signed or paid. Run the same command again with --yes to sign and pay.'
 
 type Step = { call: Call; summary: string; step: string }
+
+// A plan being repriced: for the minute between an admin's edit on the server and the owner's
+// setTier on the contract, the two disagree on its fee. Paying then pays the wrong amount (the
+// server refuses an entry below the plan's current fee), so nothing is signed.
+const feeChanging = (listedUsd: number, onchain: bigint) =>
+  new PluginError('FEE_CHANGING', `This plan’s price is being updated on the contract (it charges ${usd(Number(onchain) / 1e6)}; MonFunded lists ${usd(listedUsd)}), so nothing was paid.`, 'Try again in a minute; `mm monfunded status` shows the plans and their fees.')
+
+// Right before each transaction: the plan as the server lists it now, and the contract's fee for
+// its index, must both still be the fee the user confirmed.
+async function stillPriced(d: Deps, contract: Address, tier: Tier) {
+  const [config, onchain] = await Promise.all([d.api.config(), d.reader.tierFee(contract, tier.index)])
+  const now = config.tiers.find((t) => t.id === tier.id)
+  if (!now || now.enabled === false || !config.contract || !same(config.contract, contract)) throw new PluginError('ENTRIES_CLOSED', 'That plan stopped taking entries while the payment was shown, so nothing was paid.', 'Run `mm monfunded status` to see the plans on sale.')
+  if (now.index !== tier.index || now.feeUsd !== tier.feeUsd || onchain !== usd6(tier.feeUsd)) throw feeChanging(now.feeUsd, onchain)
+}
 
 export async function buy(d: Deps, input: BuyInput) {
   signIn(d)
@@ -37,11 +53,12 @@ export async function buy(d: Deps, input: BuyInput) {
   const again = `mm monfunded buy --size ${sizeFlag(tier.size)} --risk ${tier.risk}`
   if (input.entryTx) return register(d, tier, input.entryTx, again)
 
-  // The contract must charge what MonFunded lists, in the coins MonFunded names.
+  // The contract must take the coins MonFunded names and charge exactly the plan's listed fee
+  // (tiers(index)), whichever coin pays: the contract charges its own number, the server wants its.
   const fee = usd6(tier.feeUsd)
   const [onchainFee, coins] = await Promise.all([d.reader.tierFee(contract, tier.index), d.reader.coins(contract)])
   if (!same(coins.usdc, USDC) || !same(coins.ausd, AUSD)) throw new PluginError('BAD_CONTRACT', `The contract ${contract} does not take MonFunded’s USDC and AUSD, so nothing was paid.`, 'If MONFUNDED_API_URL is set, check it points at MonFunded.')
-  if (onchainFee !== fee) throw new PluginError('FEE_MISMATCH', `The contract charges ${usd(Number(onchainFee) / 1e6)} for this plan but MonFunded lists ${usd(tier.feeUsd)}, so nothing was paid.`, 'Tell MonFunded on Telegram (https://t.me/monfunded); try again once they match.')
+  if (onchainFee !== fee) throw feeChanging(tier.feeUsd, onchainFee)
 
   const name = planName(tier)
   const steps: Step[] = []
@@ -84,7 +101,12 @@ export async function buy(d: Deps, input: BuyInput) {
   if (!(await d.confirm(plan))) return { done: false as const, plan, next: NEXT, summary: [NEXT] }
   const signer = await d.signer()
   let entryTx: Hex | undefined
-  for (const s of steps) entryTx = await signer.send(s.call, s.summary)
+  // The plan may be repriced while it is shown, or between its approval and its entry: each
+  // transaction goes only while the server and the contract still price it as confirmed.
+  for (const s of steps) {
+    await stillPriced(d, contract, tier)
+    entryTx = await signer.send(s.call, s.summary)
+  }
   return { ...(await register(d, tier, entryTx as Hex, again)), plan }
 }
 

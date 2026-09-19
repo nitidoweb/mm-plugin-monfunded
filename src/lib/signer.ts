@@ -16,7 +16,7 @@ export type ExecutorRequest =
   | { kind: 'message'; chainId: number; message: string; intent: Intent }
   | { kind: 'transaction'; chainId: number; transaction: { to: Address; data: Hex; value: Hex }; intent: Intent }
 
-export type ExecutorResult = { kind: string; status: string; signature?: string; hash?: string; failureDescription?: string }
+type ExecutorResult = { kind: string; status: string; signature?: string; hash?: string; failureDescription?: string }
 
 export type Executor = (request: ExecutorRequest, options?: { signal?: AbortSignal; waitForReceipt?: boolean }) => Promise<ExecutorResult>
 

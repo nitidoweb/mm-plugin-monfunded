@@ -1,0 +1,12 @@
+{
+  "entry": [
+    "src/host.ts",
+    "src/commands/monfunded/*.ts",
+    "src/sdk.ts",
+    "test/*.test.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ]
+}

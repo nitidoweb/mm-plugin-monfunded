@@ -64,7 +64,7 @@ export function positionView(p: Position, prices: Prices, now: number): Position
 // paid: the payout landed (the operator's, or the trader's own claim); review: held for an
 // admin's decision; rejected: declined, never paid; unpaid: owed, the operator pays it or the
 // trader claims it.
-export type WithdrawalState = 'paid' | 'review' | 'rejected' | 'unpaid'
+type WithdrawalState = 'paid' | 'review' | 'rejected' | 'unpaid'
 
 export type WithdrawalView = {
   id: string

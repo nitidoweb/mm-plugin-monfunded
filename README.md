@@ -201,3 +201,14 @@ Layout:
   reason the package has no peer dependency on `@metamask/agent-wallet`: npm would install a copy.
 - `src/lib/`: the flows and everything they use, with no `mm` in them (so the tests run without it).
 - `package.json#mm`: the manifest `mm` reads for the consent screen and the capability checks.
+
+## Why `@metamask/agent-wallet` is held at 6.2.1
+
+The rest of MonFunded runs its dependencies current. This one is pinned to the 6.x line on purpose:
+`package.json`'s `mm.minCliVersion` declares `^6.2.0`, so the plugin is built and typed against the
+same CLI major it claims to support. 7.0.0 typechecks and passes all 68 tests here, but nothing on
+this box can exercise a real `mm` 7 CLI, and building against a major the manifest does not claim
+would make the declaration untrue rather than merely conservative.
+
+Moving to 7 means changing both together — the dependency and `minCliVersion` — and testing against
+the real CLI. Until then, this pin is the honest pair.

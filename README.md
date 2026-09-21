@@ -25,7 +25,8 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
 
 ## What you need
 
-- Node.js 22.18 or later.
+- Node.js 24 or later. MetaMask's CLI itself asks for 22.18; this plugin's own build asks for 24
+  (`engines` in `package.json`), so 24 is the version that gets you through both.
 - MetaMask Agent Wallet 6.2 or later, signed in and set up, as in MetaMask's
   [quickstart](https://docs.metamask.io/agent-wallet/quickstart/):
 
@@ -39,7 +40,19 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
 
 ## Install
 
-1. Plugins are a beta feature of `mm`. Turn them on once (the second line allows installing from a
+The plugin is not on npm yet, and that is deliberate: it pins the one contract it is allowed to pay,
+and MonFunded's contract is not deployed, so anything published today would be stale the day the
+contract lands (`PLUGIN_OUTDATED`). It installs from this folder instead — four steps, meant to be
+pasted one after the other, and nothing here needs an account beyond the Agent Wallet one above.
+
+1. Get the code:
+
+   ```sh
+   git clone https://github.com/nitidoweb/monfunded.git
+   cd monfunded/agent
+   ```
+
+2. Plugins are a beta feature of `mm`. Turn them on once (the second line allows installing from a
    folder rather than from npm):
 
    ```sh
@@ -47,7 +60,7 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
    mm config set experimentalAllowUnverifiedInstalls true
    ```
 
-2. In this folder (`agent/` in the MonFunded repository), build the plugin and install it:
+3. Build the plugin and install it from this folder:
 
    ```sh
    npm install && npm run build
@@ -64,13 +77,16 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
 
    Every command works on Monad (chain 143) only.
 
-3. Check that it works:
+4. Check that it works:
 
    ```sh
+   mm plugins          # mm-plugin-monfunded 0.1.0
    mm monfunded status
    ```
 
-   Before you sign in, it shows the plans and whether entries are open.
+   `status` reads the active wallet, so `mm login` has to have happened; without it every command
+   answers `AUTH_FAILED`. Before you sign in to MonFunded it shows the plans and whether entries
+   are open.
 
 To remove it: `mm plugins uninstall mm-plugin-monfunded`, and `rm -rf ~/.monfunded` to forget the
 MonFunded session.

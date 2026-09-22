@@ -166,8 +166,9 @@ export class Api {
     return (await this.#call<{ challenge: Challenge; position: Position }>('POST', `/${id}/close`, { positionId })).data
   }
 
-  async withdraw(id: string, amountUsd: number, token: PayoutToken): Promise<{ challenge: Challenge; withdrawal: Withdrawal }> {
-    return (await this.#call<{ challenge: Challenge; withdrawal: Withdrawal }>('POST', `/${id}/withdraw`, { amountUsd, token })).data
+  // A payout takes the whole cycle's profit at once (2026-09-21): no amount to give any more.
+  async withdraw(id: string, token: PayoutToken): Promise<{ challenge: Challenge; withdrawal: Withdrawal }> {
+    return (await this.#call<{ challenge: Challenge; withdrawal: Withdrawal }>('POST', `/${id}/withdraw`, { token })).data
   }
 
   async claimProof(id: string, withdrawalId: string): Promise<ClaimProof> {

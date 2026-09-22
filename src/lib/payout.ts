@@ -11,11 +11,9 @@ import { coin, txUrl, usd } from './format.ts'
 import type { Hex, PayoutToken, Withdrawal } from './types.ts'
 import { withdrawalView } from './views.ts'
 
-export type WithdrawInput = { amount: number; token: PayoutToken; account?: string }
+export type WithdrawInput = { token: PayoutToken; account?: string }
 export type ClaimInput = { withdrawal: Hex }
 
-// The trader's share of a withdrawal, rounded down to a cent (the server's paidFor).
-const paidFor = (amountUsd: number, splitPct: number) => Math.floor((Math.round(((amountUsd * splitPct) / 100) * 1e6) / 1e6) * 100) / 100
 const other = (token: PayoutToken): PayoutToken => (token === 'USDC' ? 'AUSD' : 'USDC')
 
 // Polls until the operator's payout lands or the withdrawal is held, for up to PAYOUT_WAIT_MS.
@@ -29,39 +27,45 @@ async function awaitPayout(d: Deps, accountId: string, first: Withdrawal): Promi
   return w
 }
 
+// A payout takes the whole cycle's profit at once (2026-09-21): no amount to give any more. The
+// account must be flat (no live position) and not already waiting on a decision; `progress
+// .withdrawable` already reads 0 for either (server/challenge-rules.mjs, computeProgress), so the
+// one local check below (profit under the minimum) already covers both — `mm monfunded status`
+// says which.
 export async function withdraw(d: Deps, input: WithdrawInput) {
   signIn(d)
   const [me, config] = await Promise.all([d.api.me(), d.api.config()])
   const account = pickAccount(me, input.account, 'funded')
-  if (input.amount < config.minWithdrawUsd) throw new PluginError('INVALID_INPUT', `--amount: withdrawals start at ${usd(config.minWithdrawUsd)}.`, `Pass --amount ${config.minWithdrawUsd} or more.`)
   const p = account.progress
-  if (input.amount > p.withdrawable) throw new PluginError('NOTHING_TO_WITHDRAW', `Account ${account.id} can withdraw ${usd(p.withdrawable)} right now (profit above its size, after locked margin and today’s cap), less than ${usd(input.amount)}.`, p.withdrawable >= config.minWithdrawUsd ? `Pass --amount ${p.withdrawable} or less.` : 'Make a profit first; `mm monfunded status` shows the account.')
-  const paid = paidFor(input.amount, config.profitSplitPct)
+  if (p.withdrawable < config.minWithdrawUsd) throw new PluginError('NOTHING_TO_WITHDRAW', `Account ${account.id} has ${usd(p.withdrawable)} of profit to take, under the ${usd(config.minWithdrawUsd)} minimum (an open position, or a payout already pending, also reads as nothing to take).`, 'Run `mm monfunded status` to see why: an open position, a payout already pending, or not enough profit yet.')
+  const paid = p.withdrawablePaid
   const reserve = config.reserves[input.token]
   if (reserve !== null && reserve < paid) {
     const alt = config.reserves[other(input.token)]
-    throw new PluginError('RESERVE_LOW', `The contract’s ${input.token} reserve (${usd(reserve)}) can’t cover this ${coin(paid, input.token)} payout right now.`, alt !== null && alt >= paid ? `Withdraw in ${other(input.token)} instead: --token ${other(input.token).toLowerCase()}.` : 'Try a smaller amount, or later.')
+    throw new PluginError('RESERVE_LOW', `The contract’s ${input.token} reserve (${usd(reserve)}) can’t cover this ${coin(paid, input.token)} payout right now.`, alt !== null && alt >= paid ? `Withdraw in ${other(input.token)} instead: --token ${other(input.token).toLowerCase()}.` : 'Try again later.')
   }
   const plan: Plan = {
-    action: `Withdraw ${usd(input.amount)} of profit from funded account ${account.id}`,
-    amount: `${coin(paid, input.token)} to you (${config.profitSplitPct} % of ${usd(input.amount)}); the account’s balance drops by ${usd(input.amount)} at once`,
+    action: `Take all the profit off funded account ${account.id}`,
+    amount: `${coin(paid, input.token)} to you (${config.profitSplitPct} % of ${usd(p.withdrawable)}); the account’s balance resets to its starting size at once`,
     from: `the MonFunded contract’s ${input.token} reserve${config.contract ? ` (${config.contract})` : ''}`,
     to: `your wallet ${d.wallet}: payouts only ever go to the wallet that owns the account`,
     contract: config.contract,
     chain: CHAIN_LABEL,
-    steps: [`MonFunded records the withdrawal, screens the wallet, and its operator sends ${coin(paid, input.token)} with payout() on the contract.`],
+    steps: [`MonFunded records the payout, screens the wallet, and its operator sends ${coin(paid, input.token)} with payout() on the contract.`],
     notes: [
       'Your wallet signs nothing and pays no gas for this.',
+      'A payout is always the whole profit: there is no amount to choose.',
+      'The account pauses until this payout is released or declined; released, it trades again from its starting balance.',
       'A wallet the screening flags is held for an admin’s review before anything is paid.',
       'If the payout has not arrived, collect it yourself: `mm monfunded claim --withdrawal <id>`.',
-      'A withdrawal can’t be undone.',
+      'A payout can’t be undone.',
     ],
   }
   if (!(await d.confirm(plan))) {
     const next = 'Nothing was requested. Run the same command again with --yes to withdraw.'
     return { done: false as const, plan, next, summary: [next] }
   }
-  const { withdrawal } = await d.api.withdraw(account.id, input.amount, input.token)
+  const { withdrawal } = await d.api.withdraw(account.id, input.token)
   const view = withdrawalView(await awaitPayout(d, account.id, withdrawal))
   return { done: true as const, plan, account: account.id, withdrawal: view, summary: [view.summary] }
 }

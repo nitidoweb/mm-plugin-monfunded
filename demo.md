@@ -124,22 +124,17 @@ $ mm monfunded status
   Daily loss room: $607.94 (the account fails $150.00 below today’s opening equity; today +$457.94).
   Drawdown room: $607.94 above the $4,850.00 floor.
 
-# The operator’s payouts are paused (as when its wallet runs out of MON), so this one is claimed.
+# A payout takes the whole profit at once — no --amount any more. The operator’s payouts are
+# paused (as when its wallet runs out of MON), so this one is claimed.
 
-$ mm monfunded withdraw --amount 100 --token ausd --yes
-  0xbcd6568bc86770212ec038c4d4f6a10971210d9dd0d5b524c75d5603733a4dbb: $100.00 off the balance, 80.00 AUSD to you, not paid yet: MonFunded’s operator pays it automatically, or collect it yourself with `mm monfunded claim --withdrawal 0xbcd6568bc86770212ec038c4d4f6a10971210d9dd0d5b524c75d5603733a4dbb`.
+$ mm monfunded withdraw --token ausd --yes
+  0xbcd6568bc86770212ec038c4d4f6a10971210d9dd0d5b524c75d5603733a4dbb: $457.94 off the balance, 366.35 AUSD to you, not paid yet: MonFunded’s operator pays it automatically, or collect it yourself with `mm monfunded claim --withdrawal 0xbcd6568bc86770212ec038c4d4f6a10971210d9dd0d5b524c75d5603733a4dbb`. The account pauses until this payout is released or declined.
 
 $ mm monfunded claim --withdrawal 0xbcd6568bc86770212ec038c4d4f6a10971210d9dd0d5b524c75d5603733a4dbb --yes
-  Claimed 80.00 AUSD in https://monadscan.com/tx/0x0fc9f842bf24fa4624f9b33e483c0be4aea830d3e238737d4927dd9c1b4d10fa.
+  Claimed 366.35 AUSD in https://monadscan.com/tx/0x0fc9f842bf24fa4624f9b33e483c0be4aea830d3e238737d4927dd9c1b4d10fa.
 
-# Chain: the trader holds 80 AUSD; the contract marks 0xbcd6568b… paid.
-
-# The operator’s payouts are back on: this one pays by itself.
-
-$ mm monfunded withdraw --amount 100 --token usdc --yes
-  0x4207f4683aaa8154ca440eb5071ac6c576a62beebac4ec1213c286ffb2e9cbd0: $100.00 off the balance, 80.00 USDC to you, paid in https://monadscan.com/tx/0x97b33a346c2e0c3607ab4a3707db1007309aefbe8c9bf77a88347e9b8b211299.
-
-# Chain: the trader holds 1050 USDC and 80 AUSD.
+# Chain: the trader holds 366.35 AUSD; the contract marks 0xbcd6568b… paid. The account stays
+# paused until MonFunded releases or declines the payout; released, it trades on from $5,000.00.
 
 End to end: every step and every on-chain check passed.
 ```
@@ -152,8 +147,9 @@ What to notice:
   time.
 - `coach` warns about a position that a 0.75 % move would end, and blocks leverage above the cap.
 - `close` inside the 60-second hold is refused on the spot, before the server is even asked.
-- The run covers both ways a payout reaches the trader. First, the trader claims one from the
-  contract with MonFunded's signature. Then MonFunded's operator pays the other one.
+- `withdraw` takes the whole profit at once (no `--amount`); the account pauses until it's
+  released or declined. With the operator paused, the trader claims it from the contract with
+  MonFunded's own signature instead of waiting for the operator's payout.
 
 `npm run test:e2e -- --serve` runs the same steps against the production server
 (`server/serve.mjs`). Build the site first with `npm run build` at the repository root.
@@ -177,7 +173,7 @@ mm monfunded status                                          # the new account a
 mm monfunded coach --market BTC --side long --notional 1000 --leverage 2
 mm monfunded order --market BTC --side long --notional 1000 --leverage 2
 mm monfunded close --position <the id order printed>         # at least 60 s after the fill
-mm monfunded withdraw --amount 20 --token usdc --yes         # once funded and in profit
+mm monfunded withdraw --token usdc --yes                     # once funded and in profit: takes it all
 mm monfunded claim --withdrawal <id> --yes                   # only if a payout hasn't arrived
 ```
 

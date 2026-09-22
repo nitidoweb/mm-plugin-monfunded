@@ -147,6 +147,10 @@ async function deploy(c: { abi: { type: string; inputs?: AbiParameter[] }[]; byt
 const trader = privateKeyToAccount(generatePrivateKey())
 const operatorKey = generatePrivateKey()
 const operator = privateKeyToAccount(operatorKey)
+// The MonFunded team's own address (server/challenge-api.md, "Payouts"): a first payout always
+// meets a person, and the plugin itself has no admin commands, so this test signs in and releases
+// it directly against the API, the way the team's own console would.
+const admin = privateKeyToAccount(generatePrivateKey())
 
 // The coins: the test coin's code at Monad's own USDC and AUSD addresses, as the server expects.
 const scratch = await deploy({ abi: TestCoin.abi, bytecode: TestCoin.evm.bytecode.object })
@@ -166,9 +170,9 @@ await mint(AUSD, contract, 500_000_000n)
 
 // ---- Monad's JSON-RPC, for the server (entries, reserves, the operator's payouts) and the plugin ----
 
-// Off: the operator's payout transactions are refused (as when it has no MON for gas), so the
-// trader claims. On: they run in the EVM like any other.
-let payoutsOn = false
+// The operator's payout transactions are refused throughout this run (as when its wallet has no
+// MON for gas), so the trader claims its payout from the contract instead.
+const payoutsOn = false
 const nonces = new Map<string, number>()
 const rpcServer = createServer((req, res) => {
   let text = ''
@@ -256,7 +260,7 @@ createServer((req, res) => {
 const { NANSEN_API_KEY: _n, AURORA_API_KEY: _a, ENVIO_GRAPHQL_URL: _e, CHALLENGE_OPERATOR_KEY: _o, CREDENTIALS_DIRECTORY: _c, CHALLENGE_ADMINS: _ad, ...env } = process.env
 const server = spawn(process.execPath, SERVE ? ['server/serve.mjs'] : ['--input-type=module', '-e', HARNESS], {
   cwd: ROOT,
-  env: { ...env, PORT: String(PORT), HOST: '127.0.0.1', MONFUNDED_STATE: state, CHALLENGE_TEST: '1', CHALLENGE_PRICES_STUB: stub, CHALLENGE_RPC: RPC, CHALLENGE_CONTRACT: contract, CHALLENGE_OPERATOR_KEY: operatorKey },
+  env: { ...env, PORT: String(PORT), HOST: '127.0.0.1', MONFUNDED_STATE: state, CHALLENGE_TEST: '1', CHALLENGE_PRICES_STUB: stub, CHALLENGE_RPC: RPC, CHALLENGE_CONTRACT: contract, CHALLENGE_OPERATOR_KEY: operatorKey, CHALLENGE_ADMINS: admin.address },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let serverLog = ''
@@ -301,6 +305,17 @@ const deps = (): Deps => ({
     await delay(Math.min(ms, 200))
   },
 })
+
+// The MonFunded team's own release: signs in as `admin` (the plugin has no commands for this) and
+// approves the held withdrawal directly against the API, the way the team's own console would.
+async function releaseAsAdmin(withdrawalId: Hex) {
+  const adminApi = new Api(BASE, apiFetch, undefined, { dev })
+  const { nonce, message } = await adminApi.nonce(admin.address)
+  const signature = await admin.signMessage({ message })
+  const { cookie } = await adminApi.verify(admin.address, nonce, signature)
+  const res = await apiFetch(`${BASE}/challenge/admin/payouts/${withdrawalId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: `monfunded_session=${cookie}` }, body: '{}' })
+  assert.equal(res.status, 200, `admin release of ${withdrawalId} failed: ${await res.text()}`)
+}
 
 function show(command: string, result: { summary: string[]; plan?: Plan; done?: boolean }) {
   console.log(`\n$ mm monfunded ${command}`)
@@ -390,27 +405,20 @@ try {
   assert.ok(funded.signedIn && 'accounts' in funded)
   assert.ok((funded.accounts[0].withdrawable?.amountUsd ?? 0) > 400)
 
-  note('The operator’s payouts are paused (as when its wallet runs out of MON), so this one is claimed.')
-  const w1 = await withdraw(deps(), { amount: 100, token: 'AUSD' })
-  show('withdraw --amount 100 --token ausd --yes', w1)
+  const receiveUsd = funded.accounts[0].withdrawable?.youReceiveUsd ?? 0
+  note('A payout takes the whole profit at once — no --amount any more. The account’s first payout always meets a person, so MonFunded releases it before it can pay or be claimed; the operator’s payouts are paused meanwhile (as when its wallet runs out of MON), so this one is claimed.')
+  const w1 = await withdraw(deps(), { token: 'AUSD' })
+  show('withdraw --token ausd --yes', w1)
   assert.ok(w1.done && 'withdrawal' in w1)
-  assert.equal(w1.withdrawal.state, 'unpaid')
+  assert.equal(w1.withdrawal.state, 'review')
   const wid = w1.withdrawal.id as Hex
+  await releaseAsAdmin(wid)
   const claimed = await claim(deps(), { withdrawal: wid })
   show(`claim --withdrawal ${wid} --yes`, claimed)
   assert.ok(claimed.done && !claimed.alreadyPaid)
-  assert.equal(await balanceOf(AUSD, trader.address), 80_000_000n, 'the trader received 80 % of $100 in AUSD')
+  assert.equal(await balanceOf(AUSD, trader.address), BigInt(Math.round(receiveUsd * 1e6)), 'the trader received 80 % of the whole profit in AUSD')
   assert.equal(await isPaid(wid), true, 'the contract pays each withdrawal once')
-  note(`Chain: the trader holds ${usdc(await balanceOf(AUSD, trader.address))} AUSD; the contract marks ${wid.slice(0, 10)}… paid.`)
-
-  note('The operator’s payouts are back on: this one pays by itself.')
-  payoutsOn = true
-  const w2 = await withdraw(deps(), { amount: 100, token: 'USDC' })
-  show('withdraw --amount 100 --token usdc --yes', w2)
-  assert.ok(w2.done && 'withdrawal' in w2)
-  assert.equal(w2.withdrawal.state, 'paid')
-  assert.equal(await balanceOf(USDC, trader.address), 1_050_000_000n, 'the operator paid 80 % of $100 in USDC')
-  note(`Chain: the trader holds ${usdc(await balanceOf(USDC, trader.address))} USDC and ${usdc(await balanceOf(AUSD, trader.address))} AUSD.`)
+  note(`Chain: the trader holds ${usdc(await balanceOf(AUSD, trader.address))} AUSD; the contract marks ${wid.slice(0, 10)}… paid. The account stays paused until it trades again from its starting balance.`)
 
   console.log('\nEnd to end: every step and every on-chain check passed.')
 } catch (e) {

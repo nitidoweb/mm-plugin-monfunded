@@ -8,9 +8,10 @@ description: Trade a MonFunded prop-trading challenge on Monad with MetaMask Age
 MonFunded (https://monfunded.com) is a prop-trading firm on Monad. A trader pays a fee for an
 **assessment**: a simulated account of $5,000 to $400,000, traded at Perpl's live prices. Reaching
 the profit target with no position open passes it, and the same account becomes **funded**: the
-trader withdraws profit whenever they like and receives 80 % of it in USDC or AUSD, paid by the
-MonFunded contract to the wallet that owns the account. Losing the daily limit or the total
-drawdown fails the account, and the fee is not refunded.
+trader can take the account's whole profit at once, whenever they like, and receives 80 % of it in
+USDC or AUSD, paid by the MonFunded contract to the wallet that owns the account; the account
+pauses until that payout is released or declined, then trades on from its starting balance. Losing
+the daily limit or the total drawdown fails the account, and the fee is not refunded.
 
 The `mm monfunded` commands do all of it with the user's MetaMask Agent Wallet. Only three things
 touch the wallet: the sign-in message (`login`), the fee (`buy`) and a payout claim (`claim`). Each
@@ -63,7 +64,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `mm monfunded coach --market BTC --side long --notional 1000 --leverage 2` | Checks an intended order against the rules; sends nothing | Nothing |
 | `mm monfunded order --market BTC --side long --notional 1000 --leverage 2` | Opens a position and waits for its fill | Nothing |
 | `mm monfunded close --position p1a2b3c4d5e6f` | Closes a position after its 60 s hold (a pending order fills or lapses by itself) | Nothing |
-| `mm monfunded withdraw --amount 100 --token usdc` | Takes profit off a funded account; 80 % is paid to the wallet | Nothing, but needs `--yes` |
+| `mm monfunded withdraw --token usdc` | Takes all the profit off a funded account at once; 80 % is paid to the wallet | Nothing, but needs `--yes` |
 | `mm monfunded claim --withdrawal 0x…` | Collects an unpaid payout from the contract | A transaction, with `--yes` |
 
 - `--account <id>` picks the account when the wallet has more than one running (`coach`, `order`,
@@ -107,10 +108,11 @@ Trading is simulated, so `order` and `close` sign nothing.
 
 ### Get paid
 
-1. `status`: `accounts[].withdrawable.amountUsd` is the profit that can leave now, `youReceiveUsd`
-   the 80 % that pays.
-2. `mm monfunded withdraw --amount <usd> --token usdc --json`, show the plan, then again with
-   `--yes`.
+1. `status`: `accounts[].withdrawable.amountUsd` is the whole profit that can leave now (there is no
+   smaller amount to choose), `youReceiveUsd` the 80 % that pays.
+2. `mm monfunded withdraw --token usdc --json`, show the plan, then again with `--yes`. The account
+   pauses until this payout is released or declined; released, it trades on from its starting
+   balance.
 3. `data.withdrawal.state`: `paid` (done; `explorer` links the transaction), `unpaid` (MonFunded's
    operator pays it within minutes, or `claim` it now), `review` (held while an admin checks the
    wallet's screening: wait, nothing to do), `rejected` (declined: it will not be paid).
@@ -143,7 +145,9 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `LEVERAGE_TOO_HIGH`, `SIZE_TOO_SMALL`, `INSUFFICIENT_MARGIN` | The order breaks a rule | Adjust as `coach` shows |
 | `HOLD_TIME` | Under 60 s since the fill | Wait until the time in the message |
 | `POSITION_NOT_FOUND` | No such pending or open position | `status` |
-| `NOT_FUNDED`, `NOTHING_TO_WITHDRAW`, `WITHDRAW_CAP`, `RESERVE_LOW` | Nothing (or not that much) can be withdrawn now | Follow the hint (another coin, less, or tomorrow) |
+| `NOT_FUNDED`, `NOTHING_TO_WITHDRAW`, `RESERVE_LOW` | Nothing can be withdrawn right now | Follow the hint (another coin, or later) |
+| `POSITIONS_OPEN` | A payout needs the account flat | Close every position first |
+| `PAYOUT_PENDING` | A payout is already pending a decision | Wait for it to be released or declined |
 | `UNDER_REVIEW`, `WITHDRAWAL_REJECTED` | The payout is held, or was declined | Wait, or tell the user |
 | `NOT_SIGNED`, `TX_DENIED`, `TX_EXPIRED` (mm's), `JOB_TIMEOUT` (mm's) | MetaMask didn't sign: denied, expired, or waiting for approval | Ask the user; `mm wallet requests list` |
 | `TX_REVERTED`, `WRONG_SIGNER` | The transaction failed on Monad, or came from another wallet | `status` and balances, then ask the user |

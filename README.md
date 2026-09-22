@@ -18,7 +18,7 @@ account and claim payouts.
 | `mm monfunded coach --market BTC --side long --notional 1000 --leverage 2` | Checks an order against the rules without sending it | Nothing |
 | `mm monfunded order --market BTC --side long --notional 1000 --leverage 2` | Opens a long or short position | Nothing (the account is simulated) |
 | `mm monfunded close --position p1a2b3c4d5e6f` | Closes a position once its 60-second hold is over | Nothing |
-| `mm monfunded withdraw --amount 100 --token usdc` | Takes profit off a funded account; you receive 80 % | Nothing (MonFunded pays you) |
+| `mm monfunded withdraw --token usdc` | Takes all the profit off a funded account at once; you receive 80 % | Nothing (MonFunded pays you) |
 | `mm monfunded claim --withdrawal 0x…` | Collects an unpaid payout from the contract yourself | The claim (after showing it) |
 
 Add `--json` for output an agent can read, and `--help` to any command for its flags.
@@ -101,7 +101,7 @@ mm monfunded coach --market BTC --side long --notional 1000 --leverage 2
 mm monfunded order --market BTC --side long --notional 1000 --leverage 2
 mm monfunded status
 mm monfunded close --position p1a2b3c4d5e6f
-mm monfunded withdraw --amount 100 --token usdc --yes
+mm monfunded withdraw --token usdc --yes
 mm monfunded claim --withdrawal 0x… --yes
 ```
 

@@ -16,19 +16,19 @@ const WID = `0x${'c3'.repeat(32)}` as Hex
 const funded = (over: Partial<Challenge> = {}) => account({ status: 'funded', progress: progress({ equity: 5300, balance: 5300, profit: 300, target: 0, withdrawable: 300, withdrawablePaid: 240 }), ...over })
 const me = (...active: Challenge[]) => () => ({ address: wallet.address, active, past: [] })
 
-test('withdraw shows the payout first (80 %, the coin, where it goes) and asks for nothing', async () => {
+test('withdraw shows the payout first (the whole profit, 80 %, the coin, where it goes) and asks for nothing', async () => {
   const { api, calls } = fakeApi({ 'GET /me': me(funded()), 'GET /config': () => config() })
   const { d, plans } = makeDeps(api)
-  const r = await withdraw(d, { amount: 100, token: 'USDC' })
+  const r = await withdraw(d, { token: 'USDC' })
   assert.equal(r.done, false)
-  assert.match(plans[0].amount, /^80\.00 USDC to you \(80 % of \$100\.00\)/)
+  assert.match(plans[0].amount, /^240\.00 USDC to you \(80 % of \$300\.00\)/)
   assert.match(plans[0].to, new RegExp(wallet.address))
   assert.equal(plans[0].contract, CONTRACT)
   assert.ok(!calls.some((c) => c.path.endsWith('/withdraw')))
 })
 
-test('withdraw --yes asks MonFunded and waits for the operator’s payout', async () => {
-  const w: Withdrawal = { id: WID, amountUsd: 100, paidUsd: 80, token: 'AUSD', requestedAt: T0 }
+test('withdraw --yes asks MonFunded (no amount: the whole profit) and waits for the operator’s payout', async () => {
+  const w: Withdrawal = { id: WID, amountUsd: 300, paidUsd: 240, token: 'AUSD', requestedAt: T0 }
   let reads = 0
   const { api, calls } = fakeApi({
     'GET /me': me(funded()),
@@ -36,23 +36,22 @@ test('withdraw --yes asks MonFunded and waits for the operator’s payout', asyn
     [`POST /${ACCOUNT_ID}/withdraw`]: () => ({ challenge: funded({ withdrawals: [w] }), withdrawal: w }),
     [`GET /${ACCOUNT_ID}`]: () => funded({ withdrawals: [++reads < 2 ? w : { ...w, paidAt: T0 + 3000, tx: `0x${'d4'.repeat(32)}` }] }),
   })
-  const r = await withdraw(makeDeps(api, { yes: true }).d, { amount: 100, token: 'AUSD' })
-  assert.deepEqual(calls.find((c) => c.path.endsWith('/withdraw'))?.body, { amountUsd: 100, token: 'AUSD' })
+  const r = await withdraw(makeDeps(api, { yes: true }).d, { token: 'AUSD' })
+  assert.deepEqual(calls.find((c) => c.path.endsWith('/withdraw'))?.body, { token: 'AUSD' })
   assert.ok(r.done && 'withdrawal' in r)
   assert.equal(r.withdrawal.state, 'paid')
   assert.equal(r.withdrawal.explorer, `https://monadscan.com/tx/0x${'d4'.repeat(32)}`)
 })
 
-test('withdraw refuses: no funded account, over the withdrawable profit, under $10, a short reserve', async () => {
-  const cases: [Routes, number, string][] = [
-    [{ 'GET /me': me(account()), 'GET /config': () => config() }, 100, 'NOT_FUNDED'],
-    [{ 'GET /me': me(funded()), 'GET /config': () => config() }, 301, 'NOTHING_TO_WITHDRAW'],
-    [{ 'GET /me': me(funded()), 'GET /config': () => config() }, 5, 'INVALID_INPUT'],
-    [{ 'GET /me': me(funded()), 'GET /config': () => config({ reserves: { USDC: 50, AUSD: 900 } }) }, 100, 'RESERVE_LOW'],
+test('withdraw refuses: no funded account, too little profit (an open position or a pending payout too), a short reserve', async () => {
+  const cases: [Routes, string][] = [
+    [{ 'GET /me': me(account()), 'GET /config': () => config() }, 'NOT_FUNDED'],
+    [{ 'GET /me': me(funded({ progress: progress({ withdrawable: 5, withdrawablePaid: 4 }) })), 'GET /config': () => config() }, 'NOTHING_TO_WITHDRAW'],
+    [{ 'GET /me': me(funded()), 'GET /config': () => config({ reserves: { USDC: 50, AUSD: 900 } }) }, 'RESERVE_LOW'],
   ]
-  for (const [routes, amount, expected] of cases) {
+  for (const [routes, expected] of cases) {
     const { api, calls } = fakeApi(routes)
-    await assert.rejects(withdraw(makeDeps(api, { yes: true }).d, { amount, token: 'USDC' }), (e) => code(expected)(e) && (expected !== 'RESERVE_LOW' || /--token ausd/.test((e as PluginError).hint)))
+    await assert.rejects(withdraw(makeDeps(api, { yes: true }).d, { token: 'USDC' }), (e) => code(expected)(e) && (expected !== 'RESERVE_LOW' || /--token ausd/.test((e as PluginError).hint)))
     assert.ok(!calls.some((c) => c.path.endsWith('/withdraw')), expected)
   }
 })

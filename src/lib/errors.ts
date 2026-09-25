@@ -35,8 +35,8 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
   positionNotFound: ['POSITION_NOT_FOUND', 'No pending or open position has that id on this account.', 'Run `mm monfunded status` to list open positions.'],
   holdTime: ['HOLD_TIME', 'Positions stay open at least 60 seconds after their fill.', 'Wait until the time given, then close again.'],
   entryNotVerified: ['ENTRY_NOT_VERIFIED', 'MonFunded could not verify the entry transaction: it is not mined yet, not a MonFunded entry by this wallet for this plan, or already used.', 'Wait a few seconds and repeat the same command with --entry-tx <hash>.'],
-  entryUnderpaid: ['ENTRY_UNDERPAID', 'The entry paid less than the plan costs now (MonFunded changed the plan’s price after this payment), so it can’t start the account.', 'Don’t pay again: tell MonFunded on Telegram (https://t.me/monfunded) with the entry transaction.'],
-  entryExpired: ['ENTRY_EXPIRED', 'The entry transaction is too old: MonFunded registers entries paid in the last 3 days only.', 'Tell MonFunded on Telegram (https://t.me/monfunded) with the entry transaction.'],
+  entryUnderpaid: ['ENTRY_UNDERPAID', 'The entry paid less than the plan costs now (MonFunded changed the plan’s price after this payment), so it can’t start the account.', 'Don’t pay again: open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) with the entry transaction.'],
+  entryExpired: ['ENTRY_EXPIRED', 'The entry transaction is too old: MonFunded registers entries paid in the last 3 days only.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) with the entry transaction.'],
   orderLimit: ['ORDER_LIMIT', 'This account has placed the most orders MonFunded takes from one account in a UTC day.', 'Wait until 00:00 UTC, when the count starts again; positions already open keep running.'],
   notFunded: ['NOT_FUNDED', 'Only funded accounts can withdraw: pass the assessment first.', 'Run `mm monfunded status` to see the profit target.'],
   nothingToWithdraw: ['NOTHING_TO_WITHDRAW', 'The account’s profit is under the $10 minimum right now.', 'Run `mm monfunded status` to see what is withdrawable now.'],
@@ -45,7 +45,7 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
   payoutPending: ['PAYOUT_PENDING', 'This account already has a payout waiting on a decision (released or declined) before another can be requested.', 'Run `mm monfunded status` to see it; wait for it to be released or declined.'],
   invalidSignature: ['INVALID_SIGNATURE', 'MonFunded could not verify the sign-in signature (it expired after 5 minutes, or another wallet signed).', 'Run `mm monfunded login` again.'],
   underReview: ['UNDER_REVIEW', 'This payout is held for review: MonFunded screens payout wallets, and an admin decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.'],
-  withdrawalRejected: ['WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Ask MonFunded on Telegram (https://t.me/monfunded) if you think this is a mistake.'],
+  withdrawalRejected: ['WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) if you think this is a mistake.'],
 }
 
 // What an error reply may carry besides its code (server/challenge-api.md): holdTime and
@@ -79,7 +79,7 @@ function details(code: string, extra: ErrorExtras): string {
 // The API's error as a PluginError, with what its extras say (when to retry, the amounts).
 export function apiError(status: number, code: string | undefined, extra: ErrorExtras = {}): PluginError {
   const known = code ? API_ERRORS[code] : undefined
-  if (!known || !code) return new PluginError('API_ERROR', `MonFunded answered HTTP ${status}${code ? ` (${code})` : ''}.`, 'Try again in a moment; if it keeps failing, tell MonFunded on Telegram (https://t.me/monfunded).')
+  if (!known || !code) return new PluginError('API_ERROR', `MonFunded answered HTTP ${status}${code ? ` (${code})` : ''}.`, 'Try again in a moment; if it keeps failing, open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support).')
   const [name, message, hint] = known
   return new PluginError(name, `${message}${details(code, extra)}`, hint)
 }

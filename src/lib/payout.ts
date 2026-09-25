@@ -81,7 +81,7 @@ export async function claim(d: Deps, input: ClaimInput) {
     return { done: true as const, alreadyPaid: true, withdrawal: view, summary: [view.summary] }
   }
   if (w.status === 'review') throw new PluginError('UNDER_REVIEW', 'This payout is held for review: MonFunded screens payout wallets, and an admin decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.')
-  if (w.status === 'rejected') throw new PluginError('WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Ask MonFunded on Telegram (https://t.me/monfunded) if you think this is a mistake.')
+  if (w.status === 'rejected') throw new PluginError('WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) if you think this is a mistake.')
   const contract = config.contract
   if (!contract) throw new PluginError('NO_CONTRACT', 'MonFunded has no contract on Monad yet, so there is nothing to claim from.', 'Try again once `mm monfunded status` says entries are open.')
   if (c.trader.toLowerCase() !== d.wallet.toLowerCase()) throw new PluginError('WRONG_WALLET', `Withdrawal ${w.id} belongs to ${c.trader}; the contract pays only that wallet.`, 'Switch to it with `mm wallet select` and sign in again.')

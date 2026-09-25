@@ -199,7 +199,7 @@ test('an entry the server refuses for good (underpaid after a price change, too 
       }),
     )
     const { d } = makeDeps(api, { yes: true })
-    await assert.rejects(buy(d, TIGHT_5K), (e) => code(expected)(e) && detail.test((e as Error).message) && /The entry is 0x[0-9a-f]{64}\.$/.test((e as Error).message) && /Telegram/.test((e as PluginError).hint) && !/--entry-tx/.test((e as PluginError).hint))
+    await assert.rejects(buy(d, TIGHT_5K), (e) => code(expected)(e) && detail.test((e as Error).message) && /The entry is 0x[0-9a-f]{64}\.$/.test((e as Error).message) && /support ticket/.test((e as PluginError).hint) && !/--entry-tx/.test((e as PluginError).hint))
     assert.equal(tries, 1, expected)
   }
 })

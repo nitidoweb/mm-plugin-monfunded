@@ -20,7 +20,7 @@ const MAX_BODY = 2_000_000
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const isHexOf = (v: unknown, bytes: number): v is Hex => typeof v === 'string' && new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`).test(v)
 
-const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded API sent a configuration the plugin does not trust (${why}).`, 'Nothing was signed. Tell MonFunded on Telegram (https://t.me/monfunded); if MONFUNDED_API_URL is set, check it points at MonFunded.')
+const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded API sent a configuration the plugin does not trust (${why}).`, 'Nothing was signed. Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support); if MONFUNDED_API_URL is set, check it points at MonFunded.')
 
 // The config drives payments, so its money fields are checked before anything is signed: the two
 // coins MonFunded uses, plans with a contract index and a positive fee, and, unless `dev`, the
@@ -99,7 +99,7 @@ export class Api {
       data = JSON.parse(text)
     } catch {
       const blocked = res.status === 403 || res.status === 503 ? ' (a firewall such as Cloudflare may be challenging command-line clients)' : ''
-      throw new PluginError('NOT_JSON', `${this.base} answered HTTP ${res.status} with something other than MonFunded’s JSON${blocked}.`, 'Try again later; if it keeps happening, tell MonFunded on Telegram (https://t.me/monfunded).')
+      throw new PluginError('NOT_JSON', `${this.base} answered HTTP ${res.status} with something other than MonFunded’s JSON${blocked}.`, 'Try again later; if it keeps happening, open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support).')
     }
     if (!res.ok) {
       const e = (data && typeof data === 'object' ? data : {}) as { error?: unknown } & ErrorExtras

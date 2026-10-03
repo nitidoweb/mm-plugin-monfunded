@@ -14,6 +14,9 @@ export type Level = { price: number; size: number }
 const PRICE_SCALE = 1e18
 
 const unavailable = (why: string) => new PluginError('KURU_UNAVAILABLE', `Kuru’s market data did not answer (${why}), so the fee can’t be priced in MON.`, 'Pay with --pay usdc or --pay ausd, or try again in a minute.')
+// The MON price as Kuru's API gives it and as the chain gives it don't agree (or the chain can't be
+// asked): nothing is signed on a price that can't be confirmed.
+export const unconfirmed = () => new PluginError('MON_PRICE_UNCONFIRMED', 'The MON price couldn’t be confirmed on Monad, so nothing was signed or paid.', 'Try again in a minute, or pay with --pay usdc or --pay ausd.')
 
 // The MON that sells for at least `usdOut` USDC against `bids` (best price first; each level's
 // `size` in MON at `price` USDC per MON) after the taker fee, plus `bufferBps`.
@@ -58,7 +61,24 @@ async function kuruJson<T>(fetchFn: Fetch, path: string): Promise<T> {
   }
 }
 
-type BookInfo = { symbol?: string; marketAddress?: string; sizePrecision?: string | number; takerFeeBps?: number }
+type BookInfo = { symbol?: string; marketAddress?: string; sizePrecision?: string | number; takerFeeBps?: unknown }
+
+// The swap's floor (the router's minAmountOut, 6-decimal USDC), from the swap itself as the chain
+// answers it right before signing (chain.ts simulateMonSwap) — the same rule as the app's
+// (src/lib/challengeQuote.ts in the MonFunded repository): the output less 0.5 %, never under the fee;
+// an output under the fee ('short') or more than 2 % over it ('over': the MON quoted is far more than
+// the fee needs, as a wrong answer from Kuru's HTTP API would make it) signs nothing.
+const MIN_OUT_SLIPPAGE_BPS = 50n
+const MAX_SWAP_SURPLUS_BPS = 200n
+export function floorFromSwap(simulatedOut: bigint, feeUsd: number): { ok: true; floor: bigint } | { ok: false; why: 'short' | 'over' } {
+  const fee = BigInt(Math.round(feeUsd * 1_000_000))
+  if (simulatedOut < fee) return { ok: false, why: 'short' }
+  if (simulatedOut * 10_000n > fee * (10_000n + MAX_SWAP_SURPLUS_BPS)) return { ok: false, why: 'over' }
+  const floor = (simulatedOut * (10_000n - MIN_OUT_SLIPPAGE_BPS)) / 10_000n
+  return { ok: true, floor: floor > fee ? floor : fee }
+}
+// The most a book's taker fee is believed to be (1 %): Kuru's are a few basis points.
+const MAX_TAKER_FEE_BPS = 100
 
 // The MON (in wei) that pays `feeUsd` on `market`, which must be the book Kuru lists as MON_USDC
 // (the contract's /config.monMarket), and the book's best bid.
@@ -71,6 +91,8 @@ export async function quoteMonFee(fetchFn: Fetch, feeUsd: number, market: Addres
   if (!book?.marketAddress || book.marketAddress.toLowerCase() !== market.toLowerCase()) throw new PluginError('MON_BOOK_MISMATCH', 'Kuru’s MON_USDC book is not the one MonFunded’s contract swaps on, so the MON price can’t be trusted.', 'Pay with --pay usdc or --pay ausd.')
   const sizeScale = Number(book.sizePrecision ?? PRICE_SCALE)
   const bids = (depth.bids ?? []).map(([price, size]) => ({ price: Number(price) / PRICE_SCALE, size: Number(size) / sizeScale }))
-  const mon = monForUsdc(bids, feeUsd, Number(book.takerFeeBps ?? 0))
+  const takerFeeBps = book.takerFeeBps ?? 0
+  if (typeof takerFeeBps !== 'number' || !(takerFeeBps >= 0 && takerFeeBps <= MAX_TAKER_FEE_BPS)) throw unconfirmed()
+  const mon = monForUsdc(bids, feeUsd, takerFeeBps)
   return { monWei: monToWei(mon), bestBid: Math.max(0, ...bids.map((b) => b.price)) }
 }

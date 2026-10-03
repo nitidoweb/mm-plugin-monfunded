@@ -1,8 +1,8 @@
 // The MonFundedChallenge contract (contracts/MonFundedChallenge.sol, v3) and the two coins on
 // Monad: the calls the plugin sends through MetaMask, and the reads it makes first (through mm's
 // own authenticated RPC client) so nothing is signed that would revert or pay the wrong amount.
-import { encodeFunctionData, getAddress, parseAbi, type PublicClient } from 'viem'
-import { RECEIPT_TIMEOUT_MS } from './constants.ts'
+import { decodeFunctionResult, encodeFunctionData, getAddress, parseAbi, zeroAddress, type PublicClient } from 'viem'
+import { KURU_ROUTER, RECEIPT_TIMEOUT_MS, USDC } from './constants.ts'
 import type { Address, Hex, PayoutToken } from './types.ts'
 
 export const CHALLENGE_ABI = parseAbi([
@@ -22,6 +22,9 @@ export const ERC20_ABI = parseAbi([
   'function balanceOf(address account) view returns (uint256)',
 ])
 
+// Kuru's router: the one swap a MON fee makes inside the contract.
+const ROUTER_ABI = parseAbi(['function anyToAnySwap(address[] marketAddresses, bool[] isBuy, bool[] nativeSend, address debitToken, address creditToken, uint256 amount, uint256 minAmountOut) payable returns (uint256)'])
+
 // USD in the coins' 6-decimal units (USDC and AUSD alike), the same rounding as the server's
 // usd6, so a claim's amount matches the operator's signature to the unit.
 export const usd6 = (usd: number) => BigInt(Math.round(usd * 1_000_000))
@@ -35,8 +38,9 @@ export const approveCall = (token: Address, spender: Address, amount: bigint): C
 // enter(index) pays the plan's fee in USDC, enterWithAusd(index) the same fee in AUSD.
 export const enterCall = (contract: Address, index: number, coin: PayoutToken): Call => ({ to: contract, data: encodeFunctionData({ abi: CHALLENGE_ABI, functionName: coin === 'AUSD' ? 'enterWithAusd' : 'enter', args: [index] }), value: 0n })
 
-// enterWithMon(index, market, fee): `monWei` is sold for USDC on Kuru's MON_USDC book inside the
-// contract; the fee is the router's own floor, so a moved book reverts instead of underpaying.
+// enterWithMon(index, market, minUsdcOut): `monWei` is sold for USDC on Kuru's MON_USDC book inside
+// the contract, which keeps the fee and sends the rest back; `minUsdcOut` is the router's own floor
+// (kuru.ts floorFromSwap, never under the fee), so a moved book reverts instead of underpaying.
 export const enterWithMonCall = (contract: Address, index: number, market: Address, minUsdcOut: bigint, monWei: bigint): Call => ({ to: contract, data: encodeFunctionData({ abi: CHALLENGE_ABI, functionName: 'enterWithMon', args: [index, market, minUsdcOut] }), value: monWei })
 
 // claim(withdrawalId, token, amount, logRoot, signature): pays msg.sender, so only the trader's own
@@ -54,6 +58,9 @@ export interface ChainReader {
   nativeBalance(owner: Address): Promise<bigint>
   // What the contract charges for a plan's index (6 decimals; 0 = closed).
   tierFee(contract: Address, index: number): Promise<bigint>
+  // What `wei` MON sells for in USDC (6 decimals) on `market` right now: the router's own swap, asked
+  // of the chain as a call (nothing is sent), never Kuru's HTTP API.
+  simulateMonSwap(trader: Address, market: Address, wei: bigint): Promise<bigint>
   // The two coins the contract pays and takes.
   coins(contract: Address): Promise<{ usdc: Address; ausd: Address }>
   isPaid(contract: Address, withdrawalId: Hex): Promise<boolean>
@@ -68,6 +75,18 @@ export function clientReader(client: PublicClient): ChainReader {
     allowance: (token, owner, spender) => client.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [owner, spender] }),
     nativeBalance: (owner) => client.getBalance({ address: owner }),
     tierFee: (contract, index) => client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'tiers', args: [index] }),
+    // The balance is overridden for this call alone, so a wallet holding exactly the fee still asks.
+    simulateMonSwap: async (trader, market, wei) => {
+      const { data } = await client.call({
+        account: trader,
+        to: KURU_ROUTER,
+        value: wei,
+        data: encodeFunctionData({ abi: ROUTER_ABI, functionName: 'anyToAnySwap', args: [[market], [false], [true], zeroAddress, USDC, wei, 0n] }),
+        stateOverride: [{ address: trader, balance: wei + 10n ** 18n }],
+      })
+      if (!data) throw new Error('the router gave no answer')
+      return decodeFunctionResult({ abi: ROUTER_ABI, functionName: 'anyToAnySwap', data })
+    },
     coins: async (contract) => {
       const [usdc, ausd] = await Promise.all([client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'usdc' }), client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'ausd' })])
       return { usdc: getAddress(usdc), ausd: getAddress(ausd) }

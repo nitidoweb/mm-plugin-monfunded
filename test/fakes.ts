@@ -94,14 +94,20 @@ export function fakeApi(routes: Record<string, Handler>, options: ApiOptions = {
 
 // ---- Monad ----
 
-export function fakeChain(over: Partial<{ usdc: bigint; ausd: bigint; mon: bigint; allowance: bigint; fee: bigint; coins: { usdc: Address; ausd: Address }; paid: boolean; reserve: bigint }> = {}) {
-  const state = { usdc: 100_000_000n, ausd: 100_000_000n, mon: 1_000n * 10n ** 18n, allowance: 0n, fee: 30_000_000n, coins: { usdc: USDC as Address, ausd: AUSD as Address }, paid: false, reserve: 800_000_000n, ...over }
+// `swapOut`: what the router's swap of the fee's MON produces (6-decimal USDC); by default the MON at
+// 0.25 USDC each, the price of the tests' Kuru book. 'down' stands for a chain that can't be asked.
+export function fakeChain(over: Partial<{ usdc: bigint; ausd: bigint; mon: bigint; allowance: bigint; fee: bigint; coins: { usdc: Address; ausd: Address }; paid: boolean; reserve: bigint; swapOut: bigint | 'down' }> = {}) {
+  const state: { usdc: bigint; ausd: bigint; mon: bigint; allowance: bigint; fee: bigint; coins: { usdc: Address; ausd: Address }; paid: boolean; reserve: bigint; swapOut?: bigint | 'down' } = { usdc: 100_000_000n, ausd: 100_000_000n, mon: 1_000n * 10n ** 18n, allowance: 0n, fee: 30_000_000n, coins: { usdc: USDC as Address, ausd: AUSD as Address }, paid: false, reserve: 800_000_000n, ...over }
   const receipts = new Map<string, { from: Address; success: boolean }>()
   const reader: ChainReader = {
     tokenBalance: async (token, owner) => (owner === CONTRACT ? state.reserve : token === AUSD ? state.ausd : state.usdc),
     allowance: async () => state.allowance,
     nativeBalance: async () => state.mon,
     tierFee: async () => state.fee,
+    simulateMonSwap: async (_trader, _market, wei) => {
+      if (state.swapOut === 'down') throw new Error('rpc down')
+      return state.swapOut ?? (wei * 250_000n) / 10n ** 18n
+    },
     coins: async () => state.coins,
     isPaid: async () => state.paid,
     receipt: async (hash) => receipts.get(hash) ?? { from: wallet.address, success: true },

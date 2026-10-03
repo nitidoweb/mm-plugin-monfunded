@@ -106,14 +106,26 @@ const kuru = async (url: string) =>
     ? response(200, JSON.stringify({ symbols: [{ symbol: 'MON_USDC', marketAddress: MON_MARKET.toLowerCase(), sizePrecision: '10000000000', takerFeeBps: 0 }] }))
     : response(200, JSON.stringify({ bids: [[String(0.25e18), String(300 * 1e10)]] }))
 
-test('MON: the quoted MON goes to enterWithMon with the fee as the floor, keeping Monad’s 10 MON', async () => {
+test('MON: the quoted MON goes to enterWithMon with a floor from the swap simulated on chain, never under the fee, keeping Monad’s 10 MON', async () => {
   const { api } = fakeApi(buyRoutes())
   const { d, executor } = makeDeps(api, { yes: true, kuru })
   await buy(d, { ...TIGHT_5K, pay: 'MON' })
   const tx = txOf(executor.requests[0])
   assert.equal(executor.requests.length, 1)
   assert.equal(tx.value, toHex(120_600_000_000_000_000_000n))
+  // 120.6 MON sells for 30.15 USDC; less 0.5 % is under the 30 fee, so the floor is the fee.
   assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: tx.data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_000_000n] })
+  // MON rose 1.5 % since the quote: the swap would produce 30.45; the floor keeps all but 0.5 % of it.
+  const rose = makeDeps(api, { yes: true, kuru, chain: fakeChain({ swapOut: 30_450_000n }) })
+  await buy(rose.d, { ...TIGHT_5K, pay: 'MON' })
+  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: txOf(rose.executor.requests[0]).data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_297_750n] })
+  // Kuru's API lied (the MON quoted is far more than the fee needs: it sells for 3,000 USDC), the swap
+  // falls short of the fee, or the chain can't be asked: nothing is signed.
+  for (const swapOut of [3_000_000_000n, 29_999_999n, 'down'] as const) {
+    const bad = makeDeps(api, { yes: true, kuru, chain: fakeChain({ swapOut }) })
+    await assert.rejects(buy(bad.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
+    assert.equal(bad.executor.requests.length, 0, String(swapOut))
+  }
   const poor = makeDeps(api, { yes: true, kuru, chain: fakeChain({ mon: 130n * 10n ** 18n }) })
   await assert.rejects(buy(poor.d, { ...TIGHT_5K, pay: 'MON' }), (e) => code('INSUFFICIENT_FUNDS')(e) && /10 MON/.test((e as Error).message))
   const noBook = fakeApi(buyRoutes({ 'GET /config': () => config({ monMarket: null }) }))

@@ -10,7 +10,7 @@ import { approveCall, enterCall, enterWithMonCall, usd6, type Call } from './cha
 import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
 import { coin, mon, pct, planName, txUrl, usd } from './format.ts'
-import { quoteMonFee } from './kuru.ts'
+import { floorFromSwap, quoteMonFee, unconfirmed } from './kuru.ts'
 import type { Address, Hex, PayWith, Risk, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
@@ -20,7 +20,9 @@ const sizeFlag = (size: number) => (size % 1000 === 0 ? `${size / 1000}k` : Stri
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const NEXT = 'Nothing was signed or paid. Run the same command again with --yes to sign and pay.'
 
-type Step = { call: Call; summary: string; step: string }
+// `call` is the transaction as planned; `fresh` (a fee in MON) builds it again right before it is
+// signed, from what the chain says then.
+type Step = { call: Call; fresh?: () => Promise<Call>; summary: string; step: string }
 
 // A plan being repriced: for the minute between an admin's edit on the server and the owner's
 // setTier on the contract, the two disagree on its fee. Paying then pays the wrong amount (the
@@ -69,11 +71,23 @@ export async function buy(d: Deps, input: BuyInput) {
     const quote = await quoteMonFee(d.kuru, tier.feeUsd, market)
     const balance = await d.reader.nativeBalance(d.wallet)
     if (balance < quote.monWei + MON_RESERVE_WEI) throw new PluginError('INSUFFICIENT_FUNDS', `Paying ${mon(quote.monWei)} needs ${mon(quote.monWei + MON_RESERVE_WEI)} in the wallet (Monad keeps 10 MON in every account), and it holds ${mon(balance)}.`, 'Add MON with `mm wallet add-fund`, or pay with --pay usdc or --pay ausd.')
-    amount = `${mon(quote.monWei)} (the ${usd(tier.feeUsd)} fee at Kuru’s best bid of ${quote.bestBid} USDC per MON, plus a 0.5 % buffer that stays in the reserve)`
+    // The MON was quoted from Kuru's HTTP API alone. What it really sells for is asked of the chain
+    // (the router's own swap, as a call): short of the fee, or far more than the fee needs — the sign
+    // of a wrong API answer — signs nothing; otherwise the swap's floor is that output less 0.5 %,
+    // never under the fee. Asked now, for the plan shown, and again right before the transaction.
+    const monCall = async () => {
+      const out = await d.reader.simulateMonSwap(d.wallet, market, quote.monWei).catch(() => undefined)
+      const check = out === undefined ? undefined : floorFromSwap(out, tier.feeUsd)
+      if (!check || !check.ok) throw unconfirmed()
+      return { floor: check.floor, call: enterWithMonCall(contract, tier.index, market, check.floor, quote.monWei) }
+    }
+    const planned = await monCall()
+    amount = `${mon(quote.monWei)} (the ${usd(tier.feeUsd)} fee at Kuru’s best bid of ${quote.bestBid} USDC per MON, plus a 0.5 % buffer; any USDC the swap produces above the fee comes back to this wallet)`
     steps.push({
-      call: enterWithMonCall(contract, tier.index, market, fee, quote.monWei),
+      call: planned.call,
+      fresh: async () => (await monCall()).call,
       summary: `MonFunded: pay the ${name} assessment with ${mon(quote.monWei)}`,
-      step: `enterWithMon(${tier.index}, ${market}, ${fee}) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru and needs at least ${coin(tier.feeUsd, 'USDC')} back, or the whole transaction reverts.`,
+      step: `enterWithMon(${tier.index}, ${market}, ${planned.floor}) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru, keeps the ${coin(tier.feeUsd, 'USDC')} fee and sends the rest back; the swap must produce at least ${coin(Number(planned.floor) / 1e6, 'USDC')} (checked again on Monad right before signing), or the whole transaction reverts.`,
     })
   } else {
     const symbol = input.pay
@@ -105,7 +119,7 @@ export async function buy(d: Deps, input: BuyInput) {
   // transaction goes only while the server and the contract still price it as confirmed.
   for (const s of steps) {
     await stillPriced(d, contract, tier)
-    entryTx = await signer.send(s.call, s.summary)
+    entryTx = await signer.send(s.fresh ? await s.fresh() : s.call, s.summary)
   }
   return { ...(await register(d, tier, entryTx as Hex, again)), plan }
 }

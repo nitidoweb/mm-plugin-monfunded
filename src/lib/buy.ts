@@ -81,7 +81,8 @@ export async function buy(d: Deps, input: BuyInput) {
       // The deadline counts from the chain's own clock, never this computer's; no clock, nothing signed.
       const [out, time] = await Promise.all([d.reader.simulateMonSwap(d.wallet, market, quote.monWei).catch(() => undefined), d.reader.chainTime().catch(() => undefined)])
       const check = out === undefined ? undefined : floorFromSwap(out, tier.feeUsd)
-      if (!check || !check.ok || time === undefined) throw unconfirmed()
+      // Seconds since 1970, or it is no clock: milliseconds would make a deadline that never comes.
+      if (!check || !check.ok || time === undefined || !(time > 1_000_000_000n && time < 100_000_000_000n)) throw unconfirmed()
       return { floor: check.floor, call: enterWithMonCall(contract, tier.index, market, check.floor, time + MON_DEADLINE_S, quote.monWei) }
     }
     const planned = await monCall()
@@ -90,7 +91,7 @@ export async function buy(d: Deps, input: BuyInput) {
       call: planned.call,
       fresh: async () => (await monCall()).call,
       summary: `MonFunded: pay the ${name} assessment with ${mon(quote.monWei)}`,
-      step: `enterWithMon(${tier.index}, ${market}, ${planned.floor}, a deadline ${MON_DEADLINE_S / 60n} minutes after signing) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru, keeps the ${coin(tier.feeUsd, 'USDC')} fee and sends the rest back; the swap must produce at least ${coin(Number(planned.floor) / 1e6, 'USDC')} (checked again on Monad right before signing) and land within ${MON_DEADLINE_S / 60n} minutes, or the whole transaction reverts.`,
+      step: `enterWithMon(${tier.index}, ${market}, ${planned.floor}, a deadline ${MON_DEADLINE_S / 60n} minutes after the request) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru, keeps the ${coin(tier.feeUsd, 'USDC')} fee and sends the rest back; the swap must produce at least ${coin(Number(planned.floor) / 1e6, 'USDC')} (checked again on Monad right before the request) and land within ${MON_DEADLINE_S / 60n} minutes of it, any wallet approval included, or the whole transaction reverts (gas only; nothing else is taken).`,
     })
   } else {
     const symbol = input.pay

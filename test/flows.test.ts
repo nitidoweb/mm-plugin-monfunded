@@ -126,10 +126,26 @@ test('MON: the quoted MON goes to enterWithMon with a floor from the swap simula
     await assert.rejects(buy(bad.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
     assert.equal(bad.executor.requests.length, 0, String(swapOut))
   }
-  // The chain's clock can't be read: no deadline from this computer's clock instead, nothing is signed.
-  const noClock = makeDeps(api, { yes: true, kuru, chain: fakeChain({ time: 'down' }) })
-  await assert.rejects(buy(noClock.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
-  assert.equal(noClock.executor.requests.length, 0)
+  // The chain's clock can't be read, or isn't in seconds (milliseconds would make a deadline that never
+  // comes): no deadline from this computer's clock instead, nothing is signed.
+  for (const time of ['down', CHAIN_TIME * 1000n, 0n] as const) {
+    const noClock = makeDeps(api, { yes: true, kuru, chain: fakeChain({ time }) })
+    await assert.rejects(buy(noClock.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
+    assert.equal(noClock.executor.requests.length, 0, String(time))
+  }
+  // What is signed is built right before signing, not when the plan was shown: the chain moves while
+  // the plan waits for its yes (77 s later, MON up 1 %), and the transaction carries the later floor
+  // and a deadline counted from the later clock.
+  const waited = fakeChain()
+  const slow = makeDeps(api, { yes: true, kuru, chain: waited })
+  const confirm = slow.d.confirm
+  slow.d.confirm = async (plan) => {
+    waited.state.time = CHAIN_TIME + 77n
+    waited.state.swapOut = 30_450_000n
+    return confirm(plan)
+  }
+  await buy(slow.d, { ...TIGHT_5K, pay: 'MON' })
+  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: txOf(slow.executor.requests[0]).data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_297_750n, CHAIN_TIME + 77n + 300n] })
   // The contract swaps on another router than the pinned one the plugin simulates on: nothing is signed.
   const otherRouter = makeDeps(api, { yes: true, kuru, chain: fakeChain({ router: '0x000000000000000000000000000000000000dEaD' }) })
   await assert.rejects(buy(otherRouter.d, { ...TIGHT_5K, pay: 'MON' }), code('BAD_CONTRACT'))

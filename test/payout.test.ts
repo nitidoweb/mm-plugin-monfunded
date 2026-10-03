@@ -32,7 +32,9 @@ test('withdraw --yes asks MonFunded (no amount: the whole profit) and waits for 
   let reads = 0
   const { api, calls } = fakeApi({
     'GET /me': me(funded()),
-    'GET /config': () => config(),
+    // An AUSD reserve that covers the 240 AUSD payout (the default fixture's 200 doesn't, which is
+    // RESERVE_LOW's own test below).
+    'GET /config': () => config({ reserves: { USDC: 800, AUSD: 900 } }),
     [`POST /${ACCOUNT_ID}/withdraw`]: () => ({ challenge: funded({ withdrawals: [w] }), withdrawal: w }),
     [`GET /${ACCOUNT_ID}`]: () => funded({ withdrawals: [++reads < 2 ? w : { ...w, paidAt: T0 + 3000, tx: `0x${'d4'.repeat(32)}` }] }),
   })

@@ -8,7 +8,7 @@ import type { Address, Hex, PayoutToken } from './types.ts'
 export const CHALLENGE_ABI = parseAbi([
   'function enter(uint8 tier)',
   'function enterWithAusd(uint8 tier)',
-  'function enterWithMon(uint8 tier, address market, uint256 minUsdcOut) payable',
+  'function enterWithMon(uint8 tier, address market, uint256 minUsdcOut, uint256 deadline) payable',
   'function claim(bytes32 withdrawalId, address token, uint256 amount, bytes32 logRoot, bytes signature)',
   'function tiers(uint8 tier) view returns (uint256)',
   'function paid(bytes32 withdrawalId) view returns (bool)',
@@ -39,10 +39,11 @@ export const approveCall = (token: Address, spender: Address, amount: bigint): C
 // enter(index) pays the plan's fee in USDC, enterWithAusd(index) the same fee in AUSD.
 export const enterCall = (contract: Address, index: number, coin: PayoutToken): Call => ({ to: contract, data: encodeFunctionData({ abi: CHALLENGE_ABI, functionName: coin === 'AUSD' ? 'enterWithAusd' : 'enter', args: [index] }), value: 0n })
 
-// enterWithMon(index, market, minUsdcOut): `monWei` is sold for USDC on Kuru's MON_USDC book inside
-// the contract, which keeps the fee and sends the rest back; `minUsdcOut` is the router's own floor
-// (kuru.ts floorFromSwap, never under the fee), so a moved book reverts instead of underpaying.
-export const enterWithMonCall = (contract: Address, index: number, market: Address, minUsdcOut: bigint, monWei: bigint): Call => ({ to: contract, data: encodeFunctionData({ abi: CHALLENGE_ABI, functionName: 'enterWithMon', args: [index, market, minUsdcOut] }), value: monWei })
+// enterWithMon(index, market, minUsdcOut, deadline): `monWei` is sold for USDC on Kuru's MON_USDC
+// book inside the contract, which keeps the fee and sends the rest back; `minUsdcOut` is the router's
+// own floor (kuru.ts floorFromSwap, never under the fee), so a moved book reverts instead of
+// underpaying, and `deadline` the last block time (seconds) it may land at.
+export const enterWithMonCall = (contract: Address, index: number, market: Address, minUsdcOut: bigint, deadline: bigint, monWei: bigint): Call => ({ to: contract, data: encodeFunctionData({ abi: CHALLENGE_ABI, functionName: 'enterWithMon', args: [index, market, minUsdcOut, deadline] }), value: monWei })
 
 // claim(withdrawalId, token, amount, logRoot, signature): pays msg.sender, so only the trader's own
 // wallet can use the operator's signature.
@@ -61,6 +62,8 @@ export interface ChainReader {
   tierFee(contract: Address, index: number): Promise<bigint>
   // The router the contract's enterWithMon swaps through.
   router(contract: Address): Promise<Address>
+  // The latest block's time (seconds): the clock the contract's deadline is read against.
+  chainTime(): Promise<bigint>
   // What `wei` MON sells for in USDC (6 decimals) on `market` right now: the router's own swap, asked
   // of the chain as a call (nothing is sent), never Kuru's HTTP API.
   simulateMonSwap(trader: Address, market: Address, wei: bigint): Promise<bigint>
@@ -79,6 +82,7 @@ export function clientReader(client: PublicClient): ChainReader {
     nativeBalance: (owner) => client.getBalance({ address: owner }),
     tierFee: (contract, index) => client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'tiers', args: [index] }),
     router: async (contract) => getAddress(await client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'router' })),
+    chainTime: async () => (await client.getBlock()).timestamp,
     // A plain call from the wallet, no balance override: buy.ts has already checked it holds the MON
     // and Monad's 10 MON reserve, and MetaMask's own RPC may not take overrides (then every MON fee
     // would be refused as unconfirmed).

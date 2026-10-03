@@ -30,6 +30,10 @@ export const MON_MARKET: Address = '0x065c9d28e428a0db40191a54d33d5b7c71a9c394'
 // Kuru's router on Monad, the one the contract's enterWithMon swaps through, pinned too: the plugin
 // asks it what a MON fee's swap produces before anything is signed.
 export const KURU_ROUTER: Address = '0xd651346d7c789536ebf06dc72aE3C8502cd695CC'
+// How long after the chain's own clock a fee paid in MON may still land (the contract's `deadline`):
+// room for a wallet approval, and a transaction left waiting longer reverts instead of trading on a
+// later book than the one that was checked.
+export const MON_DEADLINE_S = 300n
 
 // MonFunded's sign-in: an EIP-4361 (Sign-In with Ethereum) message for this API's domain, the
 // wallet, Monad and a nonce, with this statement. The plugin signs nothing else.

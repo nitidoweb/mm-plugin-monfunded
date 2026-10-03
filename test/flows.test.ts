@@ -9,7 +9,7 @@ import { PluginError } from '../src/lib/errors.ts'
 import type { ExecutorRequest } from '../src/lib/signer.ts'
 import { status } from '../src/lib/status.ts'
 import type { Position } from '../src/lib/types.ts'
-import { account, BASE, config, CONTRACT, COOKIE, fakeApi, fakeChain, makeDeps, MON_MARKET, PRICES, progress, reply, response, T0, TIERS, wallet } from './fakes.ts'
+import { account, BASE, CHAIN_TIME, config, CONTRACT, COOKIE, fakeApi, fakeChain, makeDeps, MON_MARKET, PRICES, progress, reply, response, T0, TIERS, wallet } from './fakes.ts'
 
 const code = (c: string) => (e: unknown) => e instanceof PluginError && e.code === c
 const txOf = (r: ExecutorRequest | undefined) => {
@@ -114,11 +114,11 @@ test('MON: the quoted MON goes to enterWithMon with a floor from the swap simula
   assert.equal(executor.requests.length, 1)
   assert.equal(tx.value, toHex(120_600_000_000_000_000_000n))
   // 120.6 MON sells for 30.15 USDC; less 0.5 % is under the 30 fee, so the floor is the fee.
-  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: tx.data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_000_000n] })
+  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: tx.data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_000_000n, CHAIN_TIME + 300n] })
   // MON rose 1.5 % since the quote: the swap would produce 30.45; the floor keeps all but 0.5 % of it.
   const rose = makeDeps(api, { yes: true, kuru, chain: fakeChain({ swapOut: 30_450_000n }) })
   await buy(rose.d, { ...TIGHT_5K, pay: 'MON' })
-  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: txOf(rose.executor.requests[0]).data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_297_750n] })
+  assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: txOf(rose.executor.requests[0]).data }), { functionName: 'enterWithMon', args: [0, MON_MARKET, 30_297_750n, CHAIN_TIME + 300n] })
   // Kuru's API lied (the MON quoted is far more than the fee needs: it sells for 3,000 USDC), the swap
   // falls short of the fee, or the chain can't be asked: nothing is signed.
   for (const swapOut of [3_000_000_000n, 29_999_999n, 'down'] as const) {
@@ -126,6 +126,10 @@ test('MON: the quoted MON goes to enterWithMon with a floor from the swap simula
     await assert.rejects(buy(bad.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
     assert.equal(bad.executor.requests.length, 0, String(swapOut))
   }
+  // The chain's clock can't be read: no deadline from this computer's clock instead, nothing is signed.
+  const noClock = makeDeps(api, { yes: true, kuru, chain: fakeChain({ time: 'down' }) })
+  await assert.rejects(buy(noClock.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
+  assert.equal(noClock.executor.requests.length, 0)
   // The contract swaps on another router than the pinned one the plugin simulates on: nothing is signed.
   const otherRouter = makeDeps(api, { yes: true, kuru, chain: fakeChain({ router: '0x000000000000000000000000000000000000dEaD' }) })
   await assert.rejects(buy(otherRouter.d, { ...TIGHT_5K, pay: 'MON' }), code('BAD_CONTRACT'))

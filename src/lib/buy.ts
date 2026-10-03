@@ -5,7 +5,7 @@
 // charges exactly the listed fee and takes the two known coins, and the wallet holds the coin and
 // gas; and right before each transaction, the server and the contract must still price the plan
 // as confirmed. `--entry-tx` registers an entry already paid, without paying again.
-import { AUSD, ENTRY_ATTEMPTS, KURU_ROUTER, MON_RESERVE_WEI, USDC } from './constants.ts'
+import { AUSD, ENTRY_ATTEMPTS, KURU_ROUTER, MON_DEADLINE_S, MON_RESERVE_WEI, USDC } from './constants.ts'
 import { approveCall, enterCall, enterWithMonCall, usd6, type Call } from './chain.ts'
 import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
@@ -78,10 +78,11 @@ export async function buy(d: Deps, input: BuyInput) {
     const monCall = async () => {
       // The contract must swap on the router the simulation asks, or what it fills is not what was simulated.
       if (!same(await d.reader.router(contract), KURU_ROUTER)) throw new PluginError('BAD_CONTRACT', `The contract ${contract} doesn’t swap MON on Kuru’s router, so the MON price can’t be confirmed and nothing was signed.`, 'Pay with --pay usdc or --pay ausd.')
-      const out = await d.reader.simulateMonSwap(d.wallet, market, quote.monWei).catch(() => undefined)
+      // The deadline counts from the chain's own clock, never this computer's; no clock, nothing signed.
+      const [out, time] = await Promise.all([d.reader.simulateMonSwap(d.wallet, market, quote.monWei).catch(() => undefined), d.reader.chainTime().catch(() => undefined)])
       const check = out === undefined ? undefined : floorFromSwap(out, tier.feeUsd)
-      if (!check || !check.ok) throw unconfirmed()
-      return { floor: check.floor, call: enterWithMonCall(contract, tier.index, market, check.floor, quote.monWei) }
+      if (!check || !check.ok || time === undefined) throw unconfirmed()
+      return { floor: check.floor, call: enterWithMonCall(contract, tier.index, market, check.floor, time + MON_DEADLINE_S, quote.monWei) }
     }
     const planned = await monCall()
     amount = `${mon(quote.monWei)} (the ${usd(tier.feeUsd)} fee at Kuru’s best bid of ${quote.bestBid} USDC per MON, plus a 0.5 % buffer; any USDC the swap produces above the fee comes back to this wallet)`
@@ -89,7 +90,7 @@ export async function buy(d: Deps, input: BuyInput) {
       call: planned.call,
       fresh: async () => (await monCall()).call,
       summary: `MonFunded: pay the ${name} assessment with ${mon(quote.monWei)}`,
-      step: `enterWithMon(${tier.index}, ${market}, ${planned.floor}) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru, keeps the ${coin(tier.feeUsd, 'USDC')} fee and sends the rest back; the swap must produce at least ${coin(Number(planned.floor) / 1e6, 'USDC')} (checked again on Monad right before signing), or the whole transaction reverts.`,
+      step: `enterWithMon(${tier.index}, ${market}, ${planned.floor}, a deadline ${MON_DEADLINE_S / 60n} minutes after signing) on ${contract}, sending ${mon(quote.monWei)}: the contract sells it on Kuru, keeps the ${coin(tier.feeUsd, 'USDC')} fee and sends the rest back; the swap must produce at least ${coin(Number(planned.floor) / 1e6, 'USDC')} (checked again on Monad right before signing) and land within ${MON_DEADLINE_S / 60n} minutes, or the whole transaction reverts.`,
     })
   } else {
     const symbol = input.pay

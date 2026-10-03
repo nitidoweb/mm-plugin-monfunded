@@ -14,6 +14,7 @@ export const CHALLENGE_ABI = parseAbi([
   'function paid(bytes32 withdrawalId) view returns (bool)',
   'function usdc() view returns (address)',
   'function ausd() view returns (address)',
+  'function router() view returns (address)',
 ])
 
 export const ERC20_ABI = parseAbi([
@@ -58,6 +59,8 @@ export interface ChainReader {
   nativeBalance(owner: Address): Promise<bigint>
   // What the contract charges for a plan's index (6 decimals; 0 = closed).
   tierFee(contract: Address, index: number): Promise<bigint>
+  // The router the contract's enterWithMon swaps through.
+  router(contract: Address): Promise<Address>
   // What `wei` MON sells for in USDC (6 decimals) on `market` right now: the router's own swap, asked
   // of the chain as a call (nothing is sent), never Kuru's HTTP API.
   simulateMonSwap(trader: Address, market: Address, wei: bigint): Promise<bigint>
@@ -75,6 +78,7 @@ export function clientReader(client: PublicClient): ChainReader {
     allowance: (token, owner, spender) => client.readContract({ address: token, abi: ERC20_ABI, functionName: 'allowance', args: [owner, spender] }),
     nativeBalance: (owner) => client.getBalance({ address: owner }),
     tierFee: (contract, index) => client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'tiers', args: [index] }),
+    router: async (contract) => getAddress(await client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'router' })),
     // The balance is overridden for this call alone, so a wallet holding exactly the fee still asks.
     simulateMonSwap: async (trader, market, wei) => {
       const { data } = await client.call({

@@ -126,6 +126,10 @@ test('MON: the quoted MON goes to enterWithMon with a floor from the swap simula
     await assert.rejects(buy(bad.d, { ...TIGHT_5K, pay: 'MON' }), code('MON_PRICE_UNCONFIRMED'))
     assert.equal(bad.executor.requests.length, 0, String(swapOut))
   }
+  // The contract swaps on another router than the pinned one the plugin simulates on: nothing is signed.
+  const otherRouter = makeDeps(api, { yes: true, kuru, chain: fakeChain({ router: '0x000000000000000000000000000000000000dEaD' }) })
+  await assert.rejects(buy(otherRouter.d, { ...TIGHT_5K, pay: 'MON' }), code('BAD_CONTRACT'))
+  assert.equal(otherRouter.executor.requests.length, 0)
   const poor = makeDeps(api, { yes: true, kuru, chain: fakeChain({ mon: 130n * 10n ** 18n }) })
   await assert.rejects(buy(poor.d, { ...TIGHT_5K, pay: 'MON' }), (e) => code('INSUFFICIENT_FUNDS')(e) && /10 MON/.test((e as Error).message))
   const noBook = fakeApi(buyRoutes({ 'GET /config': () => config({ monMarket: null }) }))

@@ -5,7 +5,7 @@
 // charges exactly the listed fee and takes the two known coins, and the wallet holds the coin and
 // gas; and right before each transaction, the server and the contract must still price the plan
 // as confirmed. `--entry-tx` registers an entry already paid, without paying again.
-import { AUSD, ENTRY_ATTEMPTS, MON_RESERVE_WEI, USDC } from './constants.ts'
+import { AUSD, ENTRY_ATTEMPTS, KURU_ROUTER, MON_RESERVE_WEI, USDC } from './constants.ts'
 import { approveCall, enterCall, enterWithMonCall, usd6, type Call } from './chain.ts'
 import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
@@ -76,6 +76,8 @@ export async function buy(d: Deps, input: BuyInput) {
     // of a wrong API answer — signs nothing; otherwise the swap's floor is that output less 0.5 %,
     // never under the fee. Asked now, for the plan shown, and again right before the transaction.
     const monCall = async () => {
+      // The contract must swap on the router the simulation asks, or what it fills is not what was simulated.
+      if (!same(await d.reader.router(contract), KURU_ROUTER)) throw new PluginError('BAD_CONTRACT', `The contract ${contract} doesn’t swap MON on Kuru’s router, so the MON price can’t be confirmed and nothing was signed.`, 'Pay with --pay usdc or --pay ausd.')
       const out = await d.reader.simulateMonSwap(d.wallet, market, quote.monWei).catch(() => undefined)
       const check = out === undefined ? undefined : floorFromSwap(out, tier.feeUsd)
       if (!check || !check.ok) throw unconfirmed()

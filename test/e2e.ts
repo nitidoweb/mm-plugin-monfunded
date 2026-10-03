@@ -38,6 +38,7 @@ import { SessionStore } from '../src/lib/session.ts'
 import { executorSigner, type Executor } from '../src/lib/signer.ts'
 import { status } from '../src/lib/status.ts'
 import { close, coach, order } from '../src/lib/trade.ts'
+import { startTestCluster } from '../../scripts/lib/pg-test.mjs'
 
 const ROOT = new URL('../../', import.meta.url)
 const PORT = 4417
@@ -244,6 +245,9 @@ const reader = clientReader(createPublicClient({ transport: http(RPC), pollingIn
 // ---- MonFunded: the server on :4417, prices from a stub file ----
 
 const state = mkdtempSync(join(tmpdir(), 'monfunded-agent-e2e-'))
+// The journal (and the stores) in a throwaway PostgreSQL cluster of its own.
+const cluster = await startTestCluster()
+const db = await cluster.createDb()
 const stub = join(state, 'prices.json')
 const setBtc = (price: number) => writeFileSync(stub, JSON.stringify({ 'perpl:BTC': { price, bid: price - 0.5, ask: price + 0.5, maxLeverage: 15 } }))
 setBtc(60_000)
@@ -260,7 +264,7 @@ createServer((req, res) => {
 const { NANSEN_API_KEY: _n, AURORA_API_KEY: _a, ENVIO_GRAPHQL_URL: _e, CHALLENGE_OPERATOR_KEY: _o, CREDENTIALS_DIRECTORY: _c, CHALLENGE_ADMINS: _ad, ...env } = process.env
 const server = spawn(process.execPath, SERVE ? ['server/serve.mjs'] : ['--input-type=module', '-e', HARNESS], {
   cwd: ROOT,
-  env: { ...env, PORT: String(PORT), HOST: '127.0.0.1', MONFUNDED_STATE: state, CHALLENGE_TEST: '1', CHALLENGE_PRICES_STUB: stub, CHALLENGE_RPC: RPC, CHALLENGE_CONTRACT: contract, CHALLENGE_OPERATOR_KEY: operatorKey, CHALLENGE_ADMINS: admin.address },
+  env: { ...env, PORT: String(PORT), HOST: '127.0.0.1', MONFUNDED_STATE: state, ...db.env, CHALLENGE_TEST: '1', CHALLENGE_PRICES_STUB: stub, CHALLENGE_RPC: RPC, CHALLENGE_CONTRACT: contract, CHALLENGE_OPERATOR_KEY: operatorKey, CHALLENGE_ADMINS: admin.address },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let serverLog = ''
@@ -426,6 +430,7 @@ try {
   process.exitCode = 1
 } finally {
   server.kill()
+  await cluster.stop()
   rpcServer.close()
   rmSync(state, { recursive: true, force: true })
 }

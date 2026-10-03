@@ -79,14 +79,15 @@ export function clientReader(client: PublicClient): ChainReader {
     nativeBalance: (owner) => client.getBalance({ address: owner }),
     tierFee: (contract, index) => client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'tiers', args: [index] }),
     router: async (contract) => getAddress(await client.readContract({ address: contract, abi: CHALLENGE_ABI, functionName: 'router' })),
-    // The balance is overridden for this call alone, so a wallet holding exactly the fee still asks.
+    // A plain call from the wallet, no balance override: buy.ts has already checked it holds the MON
+    // and Monad's 10 MON reserve, and MetaMask's own RPC may not take overrides (then every MON fee
+    // would be refused as unconfirmed).
     simulateMonSwap: async (trader, market, wei) => {
       const { data } = await client.call({
         account: trader,
         to: KURU_ROUTER,
         value: wei,
         data: encodeFunctionData({ abi: ROUTER_ABI, functionName: 'anyToAnySwap', args: [[market], [false], [true], zeroAddress, USDC, wei, 0n] }),
-        stateOverride: [{ address: trader, balance: wei + 10n ** 18n }],
       })
       if (!data) throw new Error('the router gave no answer')
       return decodeFunctionResult({ abi: ROUTER_ABI, functionName: 'anyToAnySwap', data })

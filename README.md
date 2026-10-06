@@ -126,8 +126,9 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   wallet is under MonFunded's limits (five assessments running at once, $400,000 of funded
   accounts), the contract charges exactly the listed fee and takes MonFunded's USDC and AUSD, and
   the wallet holds enough. It approves exactly the fee, never more.
-  If registering the account fails after paying, the error gives the command that registers it
-  without paying again (`--entry-tx`).
+  The limits are read again right before each signature. If registering the account fails after
+  paying, the error says the fee is paid (`PAID_NOT_REGISTERED`, never a code that elsewhere means
+  nothing was paid) and gives the command that registers it without paying again (`--entry-tx`).
 - **Only MonFunded's sign-in is signed.** `login` signs a Sign-In with Ethereum (EIP-4361) message
   and checks every field first: the domain and URI are the API's own (`monfunded.com`,
   `https://monfunded.com`), the address is the active wallet, the chain is Monad (143), the nonce
@@ -177,6 +178,8 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   was paid.
 - **`BAD_CONFIG`**: MonFunded's API named a contract or a coin other than the ones this version
   pins. Nothing was signed; check for a newer version of the plugin.
+- **`PAID_NOT_REGISTERED`**: the fee is paid but the account isn't started (the message says why).
+  Don't pay again: run the `--entry-tx` command from the hint within 72 hours.
 - **`UNEXPECTED_MESSAGE`**: the server's sign-in message failed a check (the message says which).
   Check the computer's clock (it must be within 5 minutes), then `mm monfunded login` again.
 - **`INVALID_API_URL`**: `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or isn't an origin.
@@ -188,7 +191,7 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 ## For developers
 
 ```sh
-npm test            # 73 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
+npm test            # 79 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
 npm run test:e2e    # the whole flow against a local MonFunded server and the real contract (see below)
 npm run typecheck
 npm run build

@@ -44,7 +44,7 @@ export function positionView(p: Position, prices: Prices, now: number): Position
   const pnl = p.pnl ?? (filled && p.entryPrice && mark ? cents(p.notional * (p.side === 'long' ? mark / p.entryPrice - 1 : 1 - mark / p.entryPrice)) : undefined)
   const closable = p.status === 'open' && p.openedAt !== undefined ? p.openedAt + MIN_HOLD_MS : undefined
   const head = `${p.id}: ${symbolOf(p.marketId)} ${p.side} ${usd(p.notional)} at ${p.leverage}x`
-  const endedBy = ENDED_BY[p.closedBy ?? 'trader']
+  const endedBy = p.closedBy && Object.hasOwn(ENDED_BY, p.closedBy) ? ENDED_BY[p.closedBy] : ''
   const summary =
     p.status === 'pending'
       ? `${head}, waiting for its fill at the next Perpl quote (${usd(p.margin)} margin locked).`

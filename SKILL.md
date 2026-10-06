@@ -25,7 +25,8 @@ Trading is simulated, so `order` and `close` sign nothing.
 1. **Show before you pay.** `buy`, `withdraw` and `claim` do nothing without `--yes`. Run the
    command without `--yes` first, show the user the `plan` it returns (action, amount and coin,
    from, to, contract, every step), and add `--yes` only after the user says yes to that plan. Never
-   add `--yes` on your own initiative, and never to a plan the user hasn't seen.
+   add `--yes` on your own initiative, and never to a plan the user hasn't seen. Buy one account at
+   a time: never run two `buy` commands at once, and run `status` between two buys.
 2. **Stay inside the user's budget.** Ask for the most they want to spend and the account size
    before buying. Agent Wallet's 24-hour limit is a backstop, not a budget.
 3. **Coach before every order.** Run `mm monfunded coach` with the same flags first. Never send an
@@ -135,7 +136,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `NO_WALLET` | mm has no EVM wallet selected | `mm wallet select <address>` |
 | `AUTH_FAILED` (mm's) | Agent Wallet itself isn't signed in | `mm login` |
 | `ENTRIES_CLOSED` | The plan is paused, or MonFunded is taking no entries | Tell the user; nothing was paid |
-| `TOO_MANY_ASSESSMENTS`, `FUNDED_CAP` | The wallet is at five running assessments, or the plan would take it past $400,000 of funded accounts | Finish one first, or pick a smaller size; nothing was paid |
+| `TOO_MANY_ASSESSMENTS`, `FUNDED_CAP` | The wallet is at five running assessments, or the plan would take it past $400,000 of funded accounts | Finish one first, or pick a smaller size; the fee was not paid |
 | `UNKNOWN_PLAN` | No plan of that size | Pick one from `status` |
 | `HEDGING`, `CROSS_HEDGE` | The wallet already holds the other side of that market, on this account or another | Close that position first; nothing was sent |
 | `PAYOUT_PENDING`, `PAYOUT_QUEUED` | A payout is waiting on a decision (no new order meanwhile), or released and waiting under the daily limit (no claim) | Wait; `status` shows it |
@@ -144,7 +145,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists, or the contract isn't the one the plugin pins | Stop and tell the user; nothing was paid |
 | `UNEXPECTED_MESSAGE` | The sign-in message failed a check (the message says which) | Tell the user; if it names the clock, they should fix it. Nothing was signed |
 | `INVALID_API_URL` | `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or is malformed | Tell the user; don't set either variable yourself |
-| `ENTRY_NOT_VERIFIED`, `REGISTER_FAILED` | Paid, but the account isn't registered yet | Run the `--entry-tx` command from the hint |
+| `ENTRY_NOT_VERIFIED`, `PAID_NOT_REGISTERED` | **The fee IS paid**, but the account isn't started: MonFunded could not see the payment yet, or refused the entry for now (the message names why, e.g. a limit reached while the payment waited) | Tell the user the fee is paid and give them the entry transaction. Never pay again. Run the `--entry-tx` command from the hint, within 72 hours |
 | `ENTRY_UNDERPAID`, `ENTRY_EXPIRED` | Paid, but MonFunded can't start the account with it (the plan's price rose after the payment, or the entry is over 3 days old) | Don't pay again; tell the user to contact MonFunded with the entry transaction |
 | `ORDER_LIMIT` | The account placed the most orders MonFunded takes in a UTC day | Stop sending orders until 00:00 UTC (the message says when) |
 | `MON_UNAVAILABLE`, `KURU_UNAVAILABLE`, `NO_LIQUIDITY`, `MON_BOOK_MISMATCH` | The fee can't be priced in MON now | Pay in `usdc` or `ausd` |

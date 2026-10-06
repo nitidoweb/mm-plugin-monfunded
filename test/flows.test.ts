@@ -222,6 +222,45 @@ test('an entry the server can’t see yet is retried; a failure after paying say
   await assert.rejects(buy(makeDeps(never.api, { yes: true }).d, TIGHT_5K), (e) => code('ENTRY_NOT_VERIFIED')(e) && /^Register it without paying again: mm monfunded buy --size 5k --pay usdc --entry-tx 0x[0-9a-f]{64}$/.test((e as PluginError).hint))
 })
 
+test('a fee paid and then refused by the server is never reported as unpaid: its own code, the entry, and how to register it', async () => {
+  // An assessment passed while MetaMask waited for the approval: the wallet is over the funded limit when the entry arrives.
+  const { api } = fakeApi(buyRoutes({ 'POST /enter': () => reply(409, { error: 'fundedCap', max: 400_000, held: 400_000 }) }))
+  const { d, executor } = makeDeps(api, { yes: true })
+  await assert.rejects(buy(d, TIGHT_5K), (e) => {
+    const { message, hint } = e as PluginError
+    return code('PAID_NOT_REGISTERED')(e) && /^The fee is paid, but MonFunded did not start the account \(FUNDED_CAP\)/.test(message) && /The entry is 0x[0-9a-f]{64}\.$/.test(message) && /^Don’t pay again\./.test(hint) && /mm monfunded buy --size 5k --pay usdc --entry-tx 0x[0-9a-f]{64}/.test(hint) && !/nothing was paid/i.test(message + hint)
+  })
+  assert.equal(executor.requests.length, 2, 'the approval and the entry were signed')
+})
+
+test('the wallet’s limits are read again before every signature: one reached while the payment was shown stops before it', async () => {
+  let reads = 0
+  const full = [1, 2, 3, 4, 5].map((n) => nth(n))
+  const { api, calls } = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: ++reads >= 2 ? full : [], past: [] }) }))
+  const { d, executor } = makeDeps(api, { yes: true })
+  await assert.rejects(buy(d, TIGHT_5K), code('TOO_MANY_ASSESSMENTS'))
+  assert.equal(executor.requests.length, 0)
+  assert.ok(!calls.some((c) => c.path === '/enter'))
+  // Reached between the approval and the entry: the approval stands (it moves nothing), the fee is not paid.
+  let later = 0
+  const between = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: ++later >= 3 ? full : [], past: [] }) }))
+  const two = makeDeps(between.api, { yes: true })
+  await assert.rejects(buy(two.d, TIGHT_5K), code('TOO_MANY_ASSESSMENTS'))
+  assert.equal(two.executor.requests.length, 1)
+  assert.equal(decodeFunctionData({ abi: ERC20_ABI, data: txOf(two.executor.requests[0]).data }).functionName, 'approve')
+})
+
+test('a plan that could be voided by a running assessment passing first says so before the payment', async () => {
+  const active = [nth(1, { status: 'funded', rules: { ...account().rules, size: 390_000 } }), nth(2, { rules: { ...account().rules, size: 10_000 } })]
+  const { api } = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active, past: [] }) }))
+  const { d, plans } = makeDeps(api)
+  await buy(d, TIGHT_5K)
+  assert.ok(plans[0].notes.some((n) => /passes before this entry is registered/.test(n)), plans[0].notes.join(' | '))
+  const calm = makeDeps(fakeApi(buyRoutes()).api)
+  await buy(calm.d, TIGHT_5K)
+  assert.ok(!calm.plans[0].notes.some((n) => /passes before this entry/.test(n)))
+})
+
 test('an entry the server refuses for good (underpaid after a price change, too old) keeps its own hint, unretried', async () => {
   const cases: [Record<string, unknown>, string, RegExp][] = [
     [{ error: 'entryUnderpaid', paidUsd: 30, feeUsd: 35 }, 'ENTRY_UNDERPAID', /paid \$30\.00; the plan costs \$35\.00/],
@@ -241,6 +280,17 @@ test('an entry the server refuses for good (underpaid after a price change, too 
     await assert.rejects(buy(d, TIGHT_5K), (e) => code(expected)(e) && detail.test((e as Error).message) && /The entry is 0x[0-9a-f]{64}\.$/.test((e as Error).message) && /support ticket/.test((e as PluginError).hint) && !/--entry-tx/.test((e as PluginError).hint))
     assert.equal(tries, 1, expected)
   }
+})
+
+test('--entry-tx is the server’s to judge: a wallet at a limit still sends it, and a refusal says the fee is paid', async () => {
+  const entryTx = `0x${'e7'.repeat(32)}` as Hex
+  const full = [1, 2, 3, 4, 5].map((n) => nth(n))
+  const taken = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: full, past: [] }) }))
+  const one = makeDeps(taken.api, { yes: true })
+  assert.equal((await buy(one.d, { ...TIGHT_5K, entryTx })).done, true)
+  assert.equal(one.executor.requests.length, 0)
+  const refused = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: full, past: [] }), 'POST /enter': () => reply(409, { error: 'tooManyAssessments', max: 5 }) }))
+  await assert.rejects(buy(makeDeps(refused.api, { yes: true }).d, { ...TIGHT_5K, entryTx }), (e) => code('PAID_NOT_REGISTERED')(e) && /TOO_MANY_ASSESSMENTS/.test((e as Error).message) && !/nothing was paid/i.test((e as Error).message))
 })
 
 test('--entry-tx registers an entry already paid, without paying again', async () => {

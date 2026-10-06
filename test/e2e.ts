@@ -175,6 +175,10 @@ await mint(AUSD, contract, 500_000_000n)
 // The operator's payout transactions are refused throughout this run (as when its wallet has no
 // MON for gas), so the trader claims its payout from the contract instead.
 const payoutsOn = false
+// The server's clock, moved by the script (CHALLENGE_TEST honours x-challenge-now): the 60 s hold
+// passes without waiting a minute, and days pass in a moment. The chain's blocks carry the same
+// time, so an entry paid on a later day is as fresh to the server as it is on Monad.
+const clock = { now: Date.now() }
 const nonces = new Map<string, number>()
 const rpcServer = createServer((req, res) => {
   let text = ''
@@ -210,7 +214,7 @@ const rpcServer = createServer((req, res) => {
         case 'eth_gasPrice':
           return answer('0x2')
         case 'eth_getBlockByNumber':
-          return answer({ number: toHex(block), hash: keccak256(toHex(`block ${block}`)), parentHash: `0x${'00'.repeat(32)}`, baseFeePerGas: '0x1', gasLimit: '0x1c9c380', gasUsed: '0x0', timestamp: toHex(Math.floor(Date.now() / 1000)), transactions: [], miner: deployer, nonce: '0x0000000000000000', difficulty: '0x0', extraData: '0x', logsBloom: `0x${'00'.repeat(256)}`, size: '0x0', sha3Uncles: `0x${'00'.repeat(32)}`, stateRoot: `0x${'00'.repeat(32)}`, transactionsRoot: `0x${'00'.repeat(32)}`, receiptsRoot: `0x${'00'.repeat(32)}`, uncles: [] })
+          return answer({ number: toHex(block), hash: keccak256(toHex(`block ${block}`)), parentHash: `0x${'00'.repeat(32)}`, baseFeePerGas: '0x1', gasLimit: '0x1c9c380', gasUsed: '0x0', timestamp: toHex(Math.floor(clock.now / 1000)), transactions: [], miner: deployer, nonce: '0x0000000000000000', difficulty: '0x0', extraData: '0x', logsBloom: `0x${'00'.repeat(256)}`, size: '0x0', sha3Uncles: `0x${'00'.repeat(32)}`, stateRoot: `0x${'00'.repeat(32)}`, transactionsRoot: `0x${'00'.repeat(32)}`, receiptsRoot: `0x${'00'.repeat(32)}`, uncles: [] })
         case 'eth_sendRawTransaction': {
           if (!payoutsOn) return refuse('test: the operator’s payouts are paused')
           const raw = params[0] as TransactionSerialized
@@ -287,9 +291,6 @@ for (let i = 0; ; i++) {
 
 // ---- the plugin: its flows, run the way each mm command runs them ----
 
-// The server's clock, moved by the script (CHALLENGE_TEST honours x-challenge-now): the 60 s hold
-// passes without waiting a minute.
-const clock = { now: Date.now() }
 const apiFetch: Fetch = (url, init) => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), 'x-challenge-now': String(clock.now) } })
 const store = new SessionStore(join(state, 'agent'))
 let approve = false
@@ -445,6 +446,19 @@ try {
   assert.equal(await balanceOf(AUSD, trader.address), BigInt(Math.round(receiveUsd * 1e6)), 'the trader received 80 % of the whole profit in AUSD')
   assert.equal(await isPaid(wid), true, 'the contract pays each withdrawal once')
   note(`Chain: the trader holds ${usdc(await balanceOf(AUSD, trader.address))} AUSD; the contract marks ${wid.slice(0, 10)}… paid. The account stays paused until it trades again from its starting balance.`)
+
+  // The server takes five assessments at a time from one wallet, and the plugin's own check is the
+  // same five: all five register, and the sixth is refused before anything is signed.
+  note('One wallet runs five assessments at a time: it buys five more, one after the other, and the sixth is refused before anything is paid.')
+  for (let n = 1; n <= 5; n++) {
+    clock.now += 61_000
+    const more = await buy(deps(), { size: 10_000, pay: 'USDC' })
+    assert.ok(more.done && 'account' in more, `assessment ${n} of 5 registered`)
+  }
+  assert.equal(await balanceOf(USDC, trader.address), 466_000_000n, 'five more $89 fees')
+  clock.now += 61_000
+  await refused('buy --size 10k --pay usdc --yes', buy(deps(), { size: 10_000, pay: 'USDC' }), 'TOO_MANY_ASSESSMENTS')
+  assert.equal(await balanceOf(USDC, trader.address), 466_000_000n, 'a refused buy pays nothing')
 
   console.log('\nEnd to end: every step and every on-chain check passed.')
 } catch (e) {

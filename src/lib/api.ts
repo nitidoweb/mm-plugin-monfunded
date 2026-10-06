@@ -28,9 +28,11 @@ const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded 
 // coins MonFunded uses, plans with a contract index and a positive fee, and, unless `dev`, the
 // pinned contract (or none, while entries are closed) and the pinned MON book (or none). A
 // developer's server may name any well-formed contract and book.
-function checkConfig(c: ChallengeConfig, { dev = false, pinnedContract = MONFUNDED_CONTRACT }: ApiOptions): ChallengeConfig {
-  const tiersOk = Array.isArray(c?.tiers) && c.tiers.every((t) => typeof t.id === 'string' && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && t.feeUsd > 0 && t.size > 0 && typeof t.rules === 'object')
+function checkConfig(sent: ChallengeConfig, { dev = false, pinnedContract = MONFUNDED_CONTRACT }: ApiOptions): ChallengeConfig {
+  const tiersOk = Array.isArray(sent?.tiers) && sent.tiers.every((t) => isWord(t.id) && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && t.feeUsd > 0 && t.size > 0 && typeof t.rules === 'object')
   if (!tiersOk) throw untrusted('malformed plans')
+  // A plan's name is shown in the payment and in MetaMask's request: a short plain one, or the size.
+  const c: ChallengeConfig = { ...sent, tiers: sent.tiers.map(({ name, ...t }) => ({ ...t, ...(typeof name === 'string' && PLAN_NAME.test(name) && { name }) })) }
   if (typeof c.usdc !== 'string' || typeof c.ausd !== 'string' || !sameAddress(c.usdc, USDC) || !sameAddress(c.ausd, AUSD)) throw untrusted('coins other than MonFunded’s USDC and AUSD')
   if (!(c.contract === null || (typeof c.contract === 'string' && isAddress(c.contract))) || !(c.monMarket === null || (typeof c.monMarket === 'string' && isAddress(c.monMarket)))) throw untrusted('a malformed contract or MON book')
   if (dev) return c
@@ -45,9 +47,42 @@ function checkProof(p: ClaimProof): ClaimProof {
   return p
 }
 
+// Accounts are read strictly, here where they come in: their words end up in refusals and summaries
+// a person or an AI agent reads, so an id, a market, a side, a status or a coin must be one — never
+// a sentence. Words that only describe (who closed a position, why an account failed, a payout's
+// transaction) are dropped when they are not the known ones, so a value a newer server adds reads
+// as absent rather than breaking the plugin.
+const unreadable = (what: string) => new PluginError('BAD_RESPONSE', `The MonFunded API sent ${what} the plugin can’t read.`, 'Nothing was signed. Try again in a moment; if it keeps happening, check for a newer version of the plugin.')
+const isWord = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9:_.-]{1,40}$/.test(v)
+const PLAN_NAME = /^[A-Za-z0-9 $,.]{1,24}$/
+const POSITION_STATUS: ReadonlySet<unknown> = new Set(['pending', 'open', 'closing', 'closed', 'cancelled'])
+const CLOSED_BY: ReadonlySet<unknown> = new Set(['trader', 'liquidation', 'stopOut', 'end', 'guard', 'sl', 'tp'])
+const ACCOUNT_STATUS: ReadonlySet<unknown> = new Set(['assessment', 'funded', 'failed'])
+const FAIL_REASON: ReadonlySet<unknown> = new Set(['dailyLoss', 'maxDrawdown', 'conduct'])
+const WITHDRAWAL_STATUS: ReadonlySet<unknown> = new Set([undefined, 'review', 'rejected', 'queued'])
+
+function checkPosition(p: Position): Position {
+  if (!p || !isWord(p.id) || !isWord(p.marketId) || (p.side !== 'long' && p.side !== 'short') || !POSITION_STATUS.has(p.status)) throw unreadable('a position')
+  const { closedBy, ...rest } = p
+  return { ...rest, ...(CLOSED_BY.has(closedBy) && { closedBy }) }
+}
+
+function checkWithdrawal(w: Withdrawal): Withdrawal {
+  if (!w || !isHexOf(w.id, 32) || (w.token !== 'USDC' && w.token !== 'AUSD') || !WITHDRAWAL_STATUS.has(w.status)) throw unreadable('a withdrawal')
+  const { tx, ...rest } = w
+  return { ...rest, ...(isHexOf(tx, 32) && { tx }) }
+}
+
+function checkChallenge(c: Challenge): Challenge {
+  if (!c || !isHexOf(c.id, 32) || typeof c.trader !== 'string' || !isAddress(c.trader) || !isWord(c.tier) || !ACCOUNT_STATUS.has(c.status) || !Array.isArray(c.positions) || !Array.isArray(c.withdrawals) || typeof c.progress !== 'object' || c.progress === null || typeof c.rules !== 'object' || c.rules === null)
+    throw unreadable('an account')
+  const { reason, ...rest } = c
+  return { ...rest, ...(FAIL_REASON.has(reason) && { reason }), positions: c.positions.map(checkPosition), withdrawals: c.withdrawals.map(checkWithdrawal) }
+}
+
 function checkMe(m: Me): Me {
-  if (!m || typeof m.address !== 'string' || !Array.isArray(m.active) || !Array.isArray(m.past)) throw new PluginError('BAD_RESPONSE', 'The MonFunded API sent an account list the plugin can’t read.', 'Try again in a moment.')
-  return m
+  if (!m || typeof m.address !== 'string' || !Array.isArray(m.active) || !Array.isArray(m.past)) throw unreadable('an account list')
+  return { ...m, active: m.active.map(checkChallenge), past: m.past.map(checkChallenge) }
 }
 
 export class Api {
@@ -143,28 +178,33 @@ export class Api {
   }
 
   async enter(tier: string, entryTx: Hex): Promise<Challenge> {
-    return (await this.#call<Challenge>('POST', '/enter', { tier, entryTx })).data
+    return checkChallenge((await this.#call<Challenge>('POST', '/enter', { tier, entryTx })).data)
   }
 
   async account(id: string): Promise<Challenge> {
-    return (await this.#call<Challenge>('GET', `/${id}`)).data
+    return checkChallenge((await this.#call<Challenge>('GET', `/${id}`)).data)
   }
 
   async history(id: string): Promise<Position[]> {
-    return (await this.#call<{ positions: Position[] }>('GET', `/${id}/history`)).data.positions
+    const { positions } = (await this.#call<{ positions: Position[] }>('GET', `/${id}/history`)).data
+    if (!Array.isArray(positions)) throw unreadable('a history')
+    return positions.map(checkPosition)
   }
 
   async order(id: string, order: { marketId: string; side: Side; notional: number; leverage: number }): Promise<{ challenge: Challenge; position: Position }> {
-    return (await this.#call<{ challenge: Challenge; position: Position }>('POST', `/${id}/orders`, order)).data
+    const { challenge, position } = (await this.#call<{ challenge: Challenge; position: Position }>('POST', `/${id}/orders`, order)).data
+    return { challenge: checkChallenge(challenge), position: checkPosition(position) }
   }
 
   async close(id: string, positionId: string): Promise<{ challenge: Challenge; position: Position }> {
-    return (await this.#call<{ challenge: Challenge; position: Position }>('POST', `/${id}/close`, { positionId })).data
+    const { challenge, position } = (await this.#call<{ challenge: Challenge; position: Position }>('POST', `/${id}/close`, { positionId })).data
+    return { challenge: checkChallenge(challenge), position: checkPosition(position) }
   }
 
   // A payout takes the whole cycle's profit at once (2026-09-21): no amount to give any more.
   async withdraw(id: string, token: PayoutToken): Promise<{ challenge: Challenge; withdrawal: Withdrawal }> {
-    return (await this.#call<{ challenge: Challenge; withdrawal: Withdrawal }>('POST', `/${id}/withdraw`, { token })).data
+    const { challenge, withdrawal } = (await this.#call<{ challenge: Challenge; withdrawal: Withdrawal }>('POST', `/${id}/withdraw`, { token })).data
+    return { challenge: checkChallenge(challenge), withdrawal: checkWithdrawal(withdrawal) }
   }
 
   async claimProof(id: string, withdrawalId: string): Promise<ClaimProof> {

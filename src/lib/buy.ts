@@ -11,7 +11,7 @@ import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
 import { coin, mon, pct, planName, txUrl, usd } from './format.ts'
 import { floorFromSwap, quoteMonFee, unconfirmed } from './kuru.ts'
-import type { Address, Hex, PayWith, Tier } from './types.ts'
+import type { Address, Hex, Me, PayWith, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
 export type BuyInput = { size: number; pay: PayWith; entryTx?: Hex }
@@ -30,10 +30,23 @@ type Step = { call: Call; fresh?: () => Promise<Call>; summary: string; step: st
 const feeChanging = (listedUsd: number, onchain: bigint) =>
   new PluginError('FEE_CHANGING', `This plan’s price is being updated on the contract (it charges ${usd(Number(onchain) / 1e6)}; MonFunded lists ${usd(listedUsd)}), so nothing was paid.`, 'Try again in a minute; `mm monfunded status` shows the plans and their fees.')
 
+// The server's two limits per wallet (a practice account counts toward neither). It checks them
+// when the entry is registered, after the fee is paid, so they are checked here first.
+const running = (me: Me) => me.active.filter((c) => !c.demo && c.status === 'assessment')
+const fundedUsd = (me: Me) => me.active.filter((c) => !c.demo && c.status === 'funded').reduce((sum, c) => sum + c.rules.size, 0)
+function underLimits(me: Me, tier: Tier) {
+  const count = running(me).length
+  if (count >= MAX_ASSESSMENTS) throw new PluginError('TOO_MANY_ASSESSMENTS', `This wallet already has ${count} assessments running, and MonFunded allows ${MAX_ASSESSMENTS} at a time. The fee was not paid.`, 'Pass or fail one first; `mm monfunded status` shows their progress.')
+  const held = fundedUsd(me)
+  if (held + tier.size > MAX_FUNDED_USD) throw new PluginError('FUNDED_CAP', `This wallet holds ${usd(held)} of funded accounts, and one wallet may hold ${usd(MAX_FUNDED_USD)} at most: a ${usd(tier.size)} plan would pass it. The fee was not paid.`, 'Pick a smaller --size; `mm monfunded status` shows the funded accounts.')
+}
+
 // Right before each transaction: the plan as the server lists it now, and the contract's fee for
-// its index, must both still be the fee the user confirmed.
+// its index, must both still be the fee the user confirmed, and the wallet still under its limits
+// (an assessment can pass, or another buy land, while MetaMask waits for an approval).
 async function stillPriced(d: Deps, contract: Address, tier: Tier) {
-  const [config, onchain] = await Promise.all([d.api.config(), d.reader.tierFee(contract, tier.index)])
+  const [config, onchain, me] = await Promise.all([d.api.config(), d.reader.tierFee(contract, tier.index), d.api.me()])
+  underLimits(me, tier)
   const now = config.tiers.find((t) => t.id === tier.id)
   if (!now || now.enabled === false || !config.contract || !same(config.contract, contract)) throw new PluginError('ENTRIES_CLOSED', 'That plan stopped taking entries while the payment was shown, so nothing was paid.', 'Run `mm monfunded status` to see the plans on sale.')
   if (now.index !== tier.index || now.feeUsd !== tier.feeUsd || onchain !== usd6(tier.feeUsd)) throw feeChanging(now.feeUsd, onchain)
@@ -50,15 +63,13 @@ export async function buy(d: Deps, input: BuyInput) {
     throw new PluginError('UNKNOWN_PLAN', `MonFunded sells no plan of $${input.size.toLocaleString('en-US')}.`, sizes.length ? `On sale: --size ${sizes.join(', ')}.` : 'Run `mm monfunded status` to see the plans on sale.')
   }
   const me = await d.api.me()
-  // The server's two limits per wallet (a practice account counts toward neither). It checks them
-  // when the entry is registered, after the fee is paid, so they are checked here first.
-  const paid = me.active.filter((c) => !c.demo)
-  const running = paid.filter((c) => c.status === 'assessment').length
-  if (running >= MAX_ASSESSMENTS) throw new PluginError('TOO_MANY_ASSESSMENTS', `This wallet already has ${running} assessments running, and MonFunded allows ${MAX_ASSESSMENTS} at a time. Nothing was paid.`, 'Pass or fail one first; `mm monfunded status` shows their progress.')
-  const held = paid.filter((c) => c.status === 'funded').reduce((sum, c) => sum + c.rules.size, 0)
-  if (held + tier.size > MAX_FUNDED_USD) throw new PluginError('FUNDED_CAP', `This wallet holds ${usd(held)} of funded accounts, and one wallet may hold ${usd(MAX_FUNDED_USD)} at most: a ${usd(tier.size)} plan would pass it. Nothing was paid.`, 'Pick a smaller --size; `mm monfunded status` shows the funded accounts.')
   const again = `mm monfunded buy --size ${sizeFlag(tier.size)} --pay ${input.pay.toLowerCase()}`
+  // An entry already paid is the server's to judge: nothing is paid here, so nothing is checked first.
   if (input.entryTx) return register(d, tier, input.entryTx, again)
+  underLimits(me, tier)
+  // Under the limit now, but over it if the assessments running pass first: said before the payment.
+  const pending = running(me).reduce((sum, c) => sum + c.rules.size, 0)
+  const mayVoid = fundedUsd(me) + tier.size + pending > MAX_FUNDED_USD
 
   // The contract must take the coins MonFunded names and charge exactly the plan's listed fee
   // (tiers(index)), whichever coin pays: the contract charges its own number, the server wants its.
@@ -120,6 +131,7 @@ export async function buy(d: Deps, input: BuyInput) {
       `Rules: close positions at ${pct(tier.rules.profitTargetPct)} profit to pass; losing ${pct(tier.rules.dailyLossPct)} in a day or ${pct(tier.rules.maxDrawdownPct)} in total fails the account.`,
       ...(tier.rules.consistencyPct !== undefined ? [`Consistency: no single day may be worth more than ${pct(tier.rules.consistencyPct)} of the profit; until then the pass waits.`] : []),
       'The fee is not refundable once the account is active.',
+      ...(mayVoid ? [`This wallet’s funded accounts and running assessments come to more than ${usd(MAX_FUNDED_USD)} with this plan: if an assessment passes before this entry is registered, MonFunded refuses the entry after the fee is paid. Buy one account at a time.`] : []),
     ],
   }
   if (!(await d.confirm(plan))) return { done: false as const, plan, next: NEXT, summary: [NEXT] }
@@ -140,8 +152,10 @@ const FINAL = new Set(['ENTRY_UNDERPAID', 'ENTRY_EXPIRED'])
 
 // Registers a mined entry with MonFunded and returns the new account. The server reads the
 // receipt from its own RPC, which can trail the wallet's by a block or two: an entry it can't
-// verify yet is retried. Any other failure after paying says how to register without paying
-// again, except those registering again can't fix (FINAL), which keep their own hint.
+// verify yet is retried. Any other failure comes after the fee is paid, and says so under one code
+// of its own (PAID_NOT_REGISTERED, never the server's, which before a payment means nothing was
+// paid) with how to register the entry without paying again; those registering again can't fix
+// (FINAL) keep their own code and hint.
 async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -155,7 +169,12 @@ async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
       }
       const why = e instanceof Error ? e.message : String(e)
       if (e instanceof PluginError && FINAL.has(e.code)) throw new PluginError(e.code, `${why} The entry is ${entryTx}.`, e.hint)
-      throw new PluginError(e instanceof PluginError ? e.code : 'REGISTER_FAILED', `${why} The entry is ${entryTx}.`, `Register it without paying again: ${again} --entry-tx ${entryTx}`)
+      if (e instanceof PluginError && e.code === 'ENTRY_NOT_VERIFIED') throw new PluginError(e.code, `${why} The entry is ${entryTx}.`, `Register it without paying again: ${again} --entry-tx ${entryTx}`)
+      throw new PluginError(
+        'PAID_NOT_REGISTERED',
+        `The fee is paid, but MonFunded did not start the account${e instanceof PluginError ? ` (${e.code})` : ''}: ${why} The entry is ${entryTx}.`,
+        `Don’t pay again. Once what refused it has changed, register this entry within 72 hours of its payment: ${again} --entry-tx ${entryTx} (if that can’t be done in time, open a support ticket in the MonFunded dashboard, https://monfunded.com/app/#support, with the entry transaction).`,
+      )
     }
   }
 }

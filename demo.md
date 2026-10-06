@@ -35,7 +35,7 @@ MONFUNDED_DEV=1: DEVELOPER MODE. The plugin talks to http://127.0.0.1:4417, not 
 and trusts that server as it is: whatever contract and MON book it names get paid.
 Use it only with a test server and test funds, never with real money.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-MonFunded agent plugin, end to end: in-memory Monad (contract 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f), MonFunded server on http://127.0.0.1:4417, MetaMask stand-in for 0x13f73e11397411136dbB74ea8f76A7eb10e47AbB.
+MonFunded agent plugin, end to end: in-memory Monad (contract 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f), MonFunded server on http://127.0.0.1:4417, MetaMask stand-in for 0xd9FB7eeCE2e5ae00D12F710550FB622112dc96F8.
 
 $ mm monfunded status
   Not signed in to MonFunded (http://127.0.0.1:4417).
@@ -44,14 +44,14 @@ $ mm monfunded status
   5 plans on sale, from $89.00.
 
 $ mm monfunded login
-  Signed in to MonFunded (http://127.0.0.1:4417) as 0x13f73e11397411136dbB74ea8f76A7eb10e47AbB until 2026-10-13T12:30:49.792Z.
-  The session is kept in /tmp/monfunded-agent-e2e-FpOTXt/agent/agent-session.json, readable by this user only.
+  Signed in to MonFunded (http://127.0.0.1:4417) as 0xd9FB7eeCE2e5ae00D12F710550FB622112dc96F8 until 2026-10-13T12:46:48.411Z.
+  The session is kept in /tmp/monfunded-agent-e2e-hP8nIk/agent/agent-session.json, readable by this user only.
   No account yet: see the plans with `mm monfunded status`, then `mm monfunded buy`.
 
 $ mm monfunded buy --size 10k --pay usdc
   Buy the $10,000 assessment (plan plan-10000)
     Amount:   89.00 USDC
-    From:     0x13f73e11397411136dbB74ea8f76A7eb10e47AbB
+    From:     0xd9FB7eeCE2e5ae00D12F710550FB622112dc96F8
     To:       the MonFunded contract 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f
     Contract: 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f
     Chain:    Monad (chain 143)
@@ -64,7 +64,7 @@ $ mm monfunded buy --size 10k --pay usdc
 
 $ mm monfunded buy --size 10k --pay usdc --yes
   Paid in https://monadscan.com/tx/0xcb836d6b0161385b8021e5ff44b1b05220a03fa32b7dcf421b75831b4e881905.
-  $10,000 assessment 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: equity $10,000.00, balance $10,000.00.
+  $10,000 assessment 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: equity $10,000.00, balance $10,000.00.
   Profit target: $0.00 of $1,000.00 (0 %); it counts once no position is open.
   Daily loss room: $300.00 (the account fails $300.00 below today’s opening equity; today $0.00).
   Drawdown room: $1,000.00 above the $9,000.00 floor.
@@ -92,71 +92,71 @@ $ mm monfunded coach --market BTC --side long --notional 5000 --leverage 2
   Opening and closing costs about $0.08 in spread.
 
 $ mm monfunded order --market BTC --side long --notional 5000 --leverage 2
-  p7376f3a26a39: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-06T12:31:50.760Z.
-  Close it with `mm monfunded close --position p7376f3a26a39` once the 60 s hold is over.
+  p7e3c7230fa37: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-06T12:47:48.025Z.
+  Close it with `mm monfunded close --position p7e3c7230fa37` once the 60 s hold is over.
 
-$ mm monfunded close --position p7376f3a26a39
-  Refused (HOLD_TIME): Positions stay open at least 60 s after their fill; p7376f3a26a39 can close from 2026-10-06T12:31:50.760Z (in 60 s).
+$ mm monfunded close --position p7e3c7230fa37
+  Refused (HOLD_TIME): Positions stay open at least 60 s after their fill; p7e3c7230fa37 can close from 2026-10-06T12:47:48.025Z (in 60 s).
 
 $ mm monfunded order --market BTC --side short --notional 5000 --leverage 2
-  Refused (HEDGING): The account is already long BTC (p7376f3a26a39), and MonFunded takes one side of a market at a time.
+  Refused (HEDGING): The account is already long BTC (p7e3c7230fa37), and MonFunded takes one side of a market at a time.
 
 # Day 1: BTC rises to 63,300 and a minute passes.
 
-$ mm monfunded close --position p7376f3a26a39
-  p7376f3a26a39: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
-  Account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: balance $10,274.91, equity $10,274.91.
+$ mm monfunded close --position p7e3c7230fa37
+  p7e3c7230fa37: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
+  Account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: balance $10,274.91, equity $10,274.91.
 
 # The next day, BTC back at 60,000.
 
 $ mm monfunded order --market BTC --side long --notional 5000 --leverage 2
-  p83f620237b76: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-07T12:32:53.760Z.
-  Close it with `mm monfunded close --position p83f620237b76` once the 60 s hold is over.
+  p3b985e8f2504: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-07T12:48:51.025Z.
+  Close it with `mm monfunded close --position p3b985e8f2504` once the 60 s hold is over.
 
 # Day 2: BTC rises to 63,300 and a minute passes.
 
-$ mm monfunded close --position p83f620237b76
-  p83f620237b76: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
-  Account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: balance $10,549.83, equity $10,549.83.
+$ mm monfunded close --position p3b985e8f2504
+  p3b985e8f2504: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
+  Account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: balance $10,549.83, equity $10,549.83.
 
 # The next day, BTC back at 60,000.
 
 $ mm monfunded order --market BTC --side long --notional 5000 --leverage 2
-  p942ab26e182d: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-08T12:33:56.760Z.
-  Close it with `mm monfunded close --position p942ab26e182d` once the 60 s hold is over.
+  p6f24d6870b61: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-08T12:49:54.025Z.
+  Close it with `mm monfunded close --position p6f24d6870b61` once the 60 s hold is over.
 
 # Day 3: BTC rises to 63,300 and a minute passes.
 
-$ mm monfunded close --position p942ab26e182d
-  p942ab26e182d: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
-  Account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: balance $10,824.74, equity $10,824.74.
+$ mm monfunded close --position p6f24d6870b61
+  p6f24d6870b61: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
+  Account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: balance $10,824.74, equity $10,824.74.
 
 # The next day, BTC back at 60,000.
 
 $ mm monfunded order --market BTC --side long --notional 5000 --leverage 2
-  pacc3c102e935: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-09T12:34:59.760Z.
-  Close it with `mm monfunded close --position pacc3c102e935` once the 60 s hold is over.
+  p3f46f38b1a2d: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-09T12:50:57.025Z.
+  Close it with `mm monfunded close --position p3f46f38b1a2d` once the 60 s hold is over.
 
 # Day 4: BTC rises to 63,300 and a minute passes.
 
-$ mm monfunded close --position pacc3c102e935
-  pacc3c102e935: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
-  Passed: the assessment reached its target, so account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e is now funded (balance reset to $10,000.00). Profit made from here can be withdrawn.
+$ mm monfunded close --position p3f46f38b1a2d
+  p3f46f38b1a2d: BTC long $5,000.00 at 2x, closed at 63299.5: P&L +$274.91.
+  Passed: the assessment reached its target, so account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a is now funded (balance reset to $10,000.00). Profit made from here can be withdrawn.
 
 $ mm monfunded order --market BTC --side long --notional 5000 --leverage 2
-  pa735c42de9d9: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-10T12:36:02.760Z.
-  Close it with `mm monfunded close --position pa735c42de9d9` once the 60 s hold is over.
+  pc006c4b3cd51: BTC long $5,000.00 at 2x, filled at 60000.5, mark 60000, P&L -$0.04; can close from 2026-10-10T12:52:00.025Z.
+  Close it with `mm monfunded close --position pc006c4b3cd51` once the 60 s hold is over.
 
 # BTC rises to 66,000 and a minute passes.
 
-$ mm monfunded close --position pa735c42de9d9
-  pa735c42de9d9: BTC long $5,000.00 at 2x, closed at 65999.5: P&L +$499.91.
-  Account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: balance $10,499.91, equity $10,499.91.
+$ mm monfunded close --position pc006c4b3cd51
+  pc006c4b3cd51: BTC long $5,000.00 at 2x, closed at 65999.5: P&L +$499.91.
+  Account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: balance $10,499.91, equity $10,499.91.
 
 $ mm monfunded status
-  Signed in to MonFunded (http://127.0.0.1:4417) as 0x13f73e11397411136dbB74ea8f76A7eb10e47AbB.
+  Signed in to MonFunded (http://127.0.0.1:4417) as 0xd9FB7eeCE2e5ae00D12F710550FB622112dc96F8.
   Entries are open: fees go to the MonFunded contract 0x5B3D6d231dCBaEafB4762102a1d8a962688ba58f on Monad.
-  $10,000 funded account 0x1cce310ae7d91265f4d95d8453c99969a01330b0bec2c7c119b0e16a93a74b4e: equity $10,499.91, balance $10,499.91.
+  $10,000 funded account 0x0fe0e231af8c2f51991da41274043daca79dde5db42f93de9e9a6c627c92897a: equity $10,499.91, balance $10,499.91.
   Consistency: the best day ($499.91) is 100 % of this phase’s profit; the limit is 30 %, so a payout asked now is held for a person’s review.
   Withdrawable now: $499.91 (you receive $399.93).
   Daily loss room: $799.91 (the account fails $300.00 below today’s opening equity; today +$499.91).
@@ -165,12 +165,17 @@ $ mm monfunded status
 # A payout takes the whole profit at once. This one waits for a person at MonFunded, who releases it before it can pay or be claimed; the operator’s payouts are paused meanwhile (as when its wallet runs out of MON), so this one is claimed.
 
 $ mm monfunded withdraw --token ausd --yes
-  0x9e5cc0cee4ca75736b56a6dd44d41294b6c737fea5d7738c6aba96efe79e2242: $499.91 off the balance, 399.93 AUSD to you, held for review: MonFunded checks every payout, and a person decides on this one before it pays.
+  0x64880880f2cc05a476aa88aa70cecc1fd2b29f3b755d1e50a780aa0cfe1f6470: $499.91 off the balance, 399.93 AUSD to you, held for review: MonFunded checks every payout, and a person decides on this one before it pays.
 
-$ mm monfunded claim --withdrawal 0x9e5cc0cee4ca75736b56a6dd44d41294b6c737fea5d7738c6aba96efe79e2242 --yes
+$ mm monfunded claim --withdrawal 0x64880880f2cc05a476aa88aa70cecc1fd2b29f3b755d1e50a780aa0cfe1f6470 --yes
   Claimed 399.93 AUSD in https://monadscan.com/tx/0x0fc9f842bf24fa4624f9b33e483c0be4aea830d3e238737d4927dd9c1b4d10fa.
 
-# Chain: the trader holds 399.93 AUSD; the contract marks 0x9e5cc0ce… paid. The account stays paused until it trades again from its starting balance.
+# Chain: the trader holds 399.93 AUSD; the contract marks 0x64880880… paid. The account stays paused until it trades again from its starting balance.
+
+# One wallet runs five assessments at a time: it buys five more, one after the other, and the sixth is refused before anything is paid.
+
+$ mm monfunded buy --size 10k --pay usdc --yes
+  Refused (TOO_MANY_ASSESSMENTS): This wallet already has 5 assessments running, and MonFunded allows 5 at a time. The fee was not paid.
 
 End to end: every step and every on-chain check passed.
 ```
@@ -184,6 +189,7 @@ What to notice:
   so is the other side of a market the account already holds.
 - The 10 % target is reached over four days: no single day may be worth more than 30 % of the
   profit, and after the first day `status` says the pass would wait.
+- One wallet runs five assessments at a time: the sixth `buy` is refused before anything is paid.
 - `withdraw` takes the whole profit at once (no `--amount`); the account pauses until a person at
   MonFunded releases or declines it. With the operator paused, the trader then claims it from the
   contract with MonFunded's own signature instead of waiting for the operator's payout.

@@ -1,11 +1,10 @@
 // Accounts, positions and withdrawals as the commands report them: the numbers an agent reads (USD
 // figures end in Usd) and one plain sentence each for people.
 import { MIN_HOLD_MS, STOP_OUT_PCT } from './constants.ts'
-import { coin, pct, planName, signedUsd, symbolOf, txUrl, usd } from './format.ts'
+import { coin, isoTime as iso, pct, planName, signedUsd, symbolOf, txUrl, usd } from './format.ts'
 import type { Challenge, ChallengeStatus, Hex, PayoutToken, Position, PositionStatus, Prices, Side, Tier, Withdrawal } from './types.ts'
 
 const cents = (n: number) => Math.round(n * 100) / 100
-const iso = (ms: number) => new Date(ms).toISOString()
 
 export type PositionView = {
   id: string

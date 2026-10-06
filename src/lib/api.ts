@@ -22,17 +22,17 @@ const MAX_BODY = 2_000_000
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const isHexOf = (v: unknown, bytes: number): v is Hex => typeof v === 'string' && new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`).test(v)
 
-const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded API sent a configuration the plugin does not trust (${why}).`, 'Nothing was signed. Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support); if MONFUNDED_API_URL is set, check it points at MonFunded.')
+const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded API sent a configuration the plugin does not trust (${why}).`, 'Nothing was paid. Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support); if MONFUNDED_API_URL is set, check it points at MonFunded.')
 
 // The config drives payments, so its money fields are checked before anything is signed: the two
 // coins MonFunded uses, plans with a contract index and a positive fee, and, unless `dev`, the
 // pinned contract (or none, while entries are closed) and the pinned MON book (or none). A
 // developer's server may name any well-formed contract and book.
 function checkConfig(sent: ChallengeConfig, { dev = false, pinnedContract = MONFUNDED_CONTRACT }: ApiOptions): ChallengeConfig {
-  const tiersOk = Array.isArray(sent?.tiers) && sent.tiers.every((t) => isWord(t.id) && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && t.feeUsd > 0 && t.size > 0 && typeof t.rules === 'object')
-  if (!tiersOk) throw untrusted('malformed plans')
+  const tiersOk = Array.isArray(sent?.tiers) && sent.tiers.every((t) => isWord(t.id) && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && typeof t.feeUsd === 'number' && t.feeUsd > 0 && typeof t.size === 'number' && t.size > 0 && typeof t.rules === 'object' && t.rules !== null)
+  if (!tiersOk || typeof sent.profitSplitPct !== 'number' || typeof sent.minWithdrawUsd !== 'number') throw untrusted('malformed plans')
   // A plan's name is shown in the payment and in MetaMask's request: a short plain one, or the size.
-  const c: ChallengeConfig = { ...sent, tiers: sent.tiers.map(({ name, ...t }) => ({ ...t, ...(typeof name === 'string' && PLAN_NAME.test(name) && { name }) })) }
+  const c: ChallengeConfig = { ...sent, tiers: sent.tiers.map(({ name, ...t }) => ({ ...t, rules: figuresIn(t.rules), ...(typeof name === 'string' && PLAN_NAME.test(name) && { name }) })) }
   if (typeof c.usdc !== 'string' || typeof c.ausd !== 'string' || !sameAddress(c.usdc, USDC) || !sameAddress(c.ausd, AUSD)) throw untrusted('coins other than MonFunded’s USDC and AUSD')
   if (!(c.contract === null || (typeof c.contract === 'string' && isAddress(c.contract))) || !(c.monMarket === null || (typeof c.monMarket === 'string' && isAddress(c.monMarket)))) throw untrusted('a malformed contract or MON book')
   if (dev) return c
@@ -53,32 +53,71 @@ function checkProof(p: ClaimProof): ClaimProof {
 // this version knows: the server names new ones (production sends 'ended' for a retired practice
 // account), and a word the plugin doesn't know is still only a word. What only describes (who
 // closed a position, why an account ended, a payout's transaction) is dropped when it is not one.
-const unreadable = (what: string) => new PluginError('BAD_RESPONSE', `The MonFunded API sent ${what} the plugin can’t read.`, 'Nothing was signed. Try again in a moment; if it keeps happening, check for a newer version of the plugin.')
+// A figure is a number, or it reads as NaN: never the text sent in its place.
+// The refusal says nothing of what was signed or paid: it can come after an approval, or after a fee.
+const unreadable = (what: string) => new PluginError('BAD_RESPONSE', `The MonFunded API sent ${what} the plugin can’t read.`, 'Try again in a moment; if it keeps happening, check for a newer version of the plugin.')
+const figure = (v: unknown) => (typeof v === 'number' ? v : NaN)
+// The named figures of a record, each a number when it is there at all.
+function figures<T extends object>(record: T, keys: (keyof T)[]): T {
+  const out = { ...record }
+  for (const k of keys) if (out[k] !== undefined) out[k] = figure(out[k]) as T[keyof T]
+  return out
+}
+// A record that holds only figures (an account's progress, a plan's rules): every value a number, a
+// yes/no, nothing, or a record of the same under a plain key.
+function figuresIn<T extends object>(record: T): T {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(record)) {
+    if (!isWord(k)) continue
+    out[k] = typeof v === 'boolean' || v === null ? v : typeof v === 'object' && !Array.isArray(v) ? figuresIn(v) : figure(v)
+  }
+  return out as T
+}
 const isWord = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9:_.-]{1,40}$/.test(v)
 const PLAN_NAME = /^[A-Za-z0-9 $,.]{1,24}$/
 
 function checkPosition(p: Position): Position {
   if (!p || !isWord(p.id) || !isWord(p.marketId) || (p.side !== 'long' && p.side !== 'short') || !isWord(p.status)) throw unreadable('a position')
-  const { closedBy, ...rest } = p
+  const { closedBy, ...rest } = figures(p, ['notional', 'leverage', 'margin', 'requestedAt', 'entryPrice', 'openedAt', 'exitPrice', 'closedAt', 'pnl'])
   return { ...rest, ...(isWord(closedBy) && { closedBy }) }
 }
 
 function checkWithdrawal(w: Withdrawal): Withdrawal {
   if (!w || !isHexOf(w.id, 32) || (w.token !== 'USDC' && w.token !== 'AUSD') || !(w.status === undefined || isWord(w.status))) throw unreadable('a withdrawal')
-  const { tx, ...rest } = w
+  const { tx, ...rest } = figures(w, ['amountUsd', 'paidUsd', 'requestedAt', 'paidAt'])
   return { ...rest, ...(isHexOf(tx, 32) && { tx }) }
 }
 
 function checkChallenge(c: Challenge): Challenge {
   if (!c || !isHexOf(c.id, 32) || typeof c.trader !== 'string' || !isAddress(c.trader) || !isWord(c.tier) || !isWord(c.status) || !Array.isArray(c.positions) || !Array.isArray(c.withdrawals) || typeof c.progress !== 'object' || c.progress === null || typeof c.rules !== 'object' || c.rules === null)
     throw unreadable('an account')
-  const { reason, ...rest } = c
-  return { ...rest, ...(isWord(reason) && { reason }), positions: c.positions.map(checkPosition), withdrawals: c.withdrawals.map(checkWithdrawal) }
+  const { reason, ...rest } = figures(c, ['startedAt', 'fundedAt', 'endedAt', 'balance', 'trades'])
+  return { ...rest, ...(isWord(reason) && { reason }), progress: figuresIn(c.progress), rules: figuresIn(c.rules), positions: c.positions.map(checkPosition), withdrawals: c.withdrawals.map(checkWithdrawal) }
 }
 
 function checkMe(m: Me): Me {
   if (!m || typeof m.address !== 'string' || !Array.isArray(m.active) || !Array.isArray(m.past)) throw unreadable('an account list')
-  return { ...m, active: m.active.map(checkChallenge), past: m.past.map(checkChallenge) }
+  // A running account the plugin can't read stops the command (the limits before a payment count
+  // them); an ended one is left out and counted, so one odd old record can't take a wallet's every
+  // command down.
+  const past: Challenge[] = []
+  for (const c of m.past) {
+    try {
+      past.push(checkChallenge(c))
+    } catch {
+      // Counted below.
+    }
+  }
+  return { address: m.address, active: m.active.map(checkChallenge), past, ...(past.length < m.past.length && { unreadablePast: m.past.length - past.length }) }
+}
+
+// Prices by market id: an entry whose id is not one, or whose figures are not numbers, is left out.
+function checkPrices(sent: Prices): Prices {
+  if (!sent || typeof sent !== 'object' || Array.isArray(sent)) throw unreadable('prices')
+  const optional = (v: unknown) => v === undefined || v === null || typeof v === 'number'
+  const out: Prices = {}
+  for (const [id, q] of Object.entries(sent)) if (/^(perpl|fx):[A-Za-z0-9._-]{1,20}$/.test(id) && q && typeof q.price === 'number' && typeof q.updatedAt === 'number' && typeof q.tradable === 'boolean' && optional(q.bid) && optional(q.ask) && optional(q.maxLeverage)) out[id] = q
+  return out
 }
 
 export class Api {
@@ -164,7 +203,7 @@ export class Api {
   }
 
   async prices(): Promise<Prices> {
-    return (await this.#call<Prices>('GET', '/prices')).data
+    return checkPrices((await this.#call<Prices>('GET', '/prices')).data)
   }
 
   // ---- the signed-in wallet's accounts ----

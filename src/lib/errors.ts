@@ -3,12 +3,15 @@
 export class PluginError extends Error {
   readonly code: string
   readonly hint: string
+  // A transaction the refusal is about, when it was sent (its hash).
+  readonly tx?: string
 
-  constructor(code: string, message: string, hint: string) {
+  constructor(code: string, message: string, hint: string, tx?: string) {
     super(message)
     this.name = 'PluginError'
     this.code = code
     this.hint = hint
+    if (tx !== undefined) this.tx = tx
   }
 }
 

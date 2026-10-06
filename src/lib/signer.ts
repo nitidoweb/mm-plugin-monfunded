@@ -5,7 +5,7 @@
 // shapes sent and read are stated here (as @metamask/agent-wallet 6.2's executor takes them).
 import { isHex, toHex } from 'viem'
 import type { Call, ChainReader } from './chain.ts'
-import { CHAIN_ID, EXPLORER_TX } from './constants.ts'
+import { CHAIN_ID, EXPLORER_TX, RECEIPT_TIMEOUT_MS } from './constants.ts'
 import { PluginError } from './errors.ts'
 import type { Address, Hex } from './types.ts'
 
@@ -29,7 +29,7 @@ export interface Signer {
 }
 
 const notDone = (r: ExecutorResult, what: string) =>
-  new PluginError('NOT_SIGNED', `MetaMask Agent Wallet did not ${what} (status ${r.status}${r.failureDescription ? `: ${r.failureDescription}` : ''}).`, 'If Guard Mode asked for an approval, approve it and run the command again; `mm wallet requests list` shows pending requests.')
+  new PluginError('NOT_SIGNED', `MetaMask Agent Wallet did not ${what} (status ${r.status}${r.failureDescription ? `: ${r.failureDescription}` : ''}).`, 'If Guard Mode is waiting for an approval (`mm wallet requests list` shows pending requests), either approve that request or reject it and run the command again. Never both: an approved request is sent, and the command would send it a second time.')
 
 export function executorSigner(exec: Executor, reader: ChainReader, from: Address, signal?: AbortSignal): Signer {
   return {
@@ -42,7 +42,11 @@ export function executorSigner(exec: Executor, reader: ChainReader, from: Addres
       const r = await exec({ kind: 'transaction', chainId: CHAIN_ID, transaction: { to: call.to, data: call.data, value: toHex(call.value) }, intent: { action: 'custom', summary } }, { signal, waitForReceipt: true })
       if (r.kind !== 'transaction' || typeof r.hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(r.hash)) throw notDone(r, 'send the transaction')
       const hash = r.hash as Hex
-      const receipt = await reader.receipt(hash)
+      // Sent: from here on the transaction may land whatever happens to this command, so a missing
+      // receipt is its own refusal with the hash, never the reader's raw error.
+      const receipt = await reader.receipt(hash).catch(() => {
+        throw new PluginError('TX_UNCONFIRMED', `Transaction ${EXPLORER_TX}${hash} was sent, but Monad did not confirm it within ${RECEIPT_TIMEOUT_MS / 1000} s: it may still land.`, 'Don’t send it again. Look the transaction up, and act on what it did once it is confirmed.', hash)
+      })
       if (!receipt.success) throw new PluginError('TX_REVERTED', `Transaction ${EXPLORER_TX}${hash} reverted on Monad, so it paid nothing.`, 'Check balances with `mm wallet balance` and the account with `mm monfunded status`, then try again.')
       if (receipt.from.toLowerCase() !== from.toLowerCase()) throw new PluginError('WRONG_SIGNER', `Transaction ${hash} was sent by ${receipt.from}, not the signed-in wallet ${from}.`, 'Use the same wallet in mm and MonFunded: `mm wallet select`, then `mm monfunded login`.')
       return hash

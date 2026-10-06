@@ -6,7 +6,7 @@
 import { CAUTION_MOVE_PCT, categoryOf, FILL_WAIT_MS, MARGIN_CALL_PCT, MIN_HOLD_MS, MIN_NOTIONAL_USD, POLL_MS, sourceOf, STOP_OUT_PCT } from './constants.ts'
 import { pickAccount, signIn, type Deps } from './context.ts'
 import { PluginError } from './errors.ts'
-import { pct, symbolOf, usd } from './format.ts'
+import { isoTime, pct, symbolOf, usd } from './format.ts'
 import type { Challenge, Position, Prices, Quote, Side } from './types.ts'
 import { positionView } from './views.ts'
 
@@ -148,7 +148,7 @@ export async function close(d: Deps, input: CloseInput) {
   const now = d.now()
   if (p.status === 'open' && p.openedAt !== undefined && now < p.openedAt + MIN_HOLD_MS) {
     const at = p.openedAt + MIN_HOLD_MS
-    throw new PluginError('HOLD_TIME', `Positions stay open at least 60 s after their fill; ${p.id} can close from ${new Date(at).toISOString()} (in ${Math.ceil((at - now) / 1000)} s).`, 'Wait, then run the same command again.')
+    throw new PluginError('HOLD_TIME', `Positions stay open at least 60 s after their fill; ${p.id} can close from ${isoTime(at)} (in ${Math.ceil((at - now) / 1000)} s).`, 'Wait, then run the same command again.')
   }
   // A pending order is the server's to fill or let lapse, never the trader's to cancel.
   if (p.status === 'pending') throw new PluginError('ORDER_PENDING', `${p.id} is an order still filling: a pending order can’t be cancelled.`, 'Wait a few seconds: it fills or lapses by itself. Close it once it has filled and its 60 s hold is over.')

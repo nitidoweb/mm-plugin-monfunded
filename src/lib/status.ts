@@ -3,14 +3,14 @@
 // withdrawable profit and withdrawals. Signed out, it still answers (the check that the plugin
 // works), and says how to sign in.
 import type { Deps } from './context.ts'
-import { planName, usd } from './format.ts'
+import { isoTime, planName, usd } from './format.ts'
 import type { Challenge, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
 const plansOf = (tiers: Tier[]) =>
   tiers.filter((t) => t.enabled !== false).map((t) => ({ plan: planName(t), id: t.id, size: t.size, feeUsd: t.feeUsd, profitTargetPct: t.rules.profitTargetPct, dailyLossPct: t.rules.dailyLossPct, maxDrawdownPct: t.rules.maxDrawdownPct, ...(t.rules.consistencyPct !== undefined && { consistencyPct: t.rules.consistencyPct }) }))
 
-const pastOf = (c: Challenge) => ({ id: c.id, tier: c.tier, status: c.status, ...(c.reason && { reason: c.reason }), ...(c.endedAt !== undefined && { endedAt: new Date(c.endedAt).toISOString() }) })
+const pastOf = (c: Challenge) => ({ id: c.id, tier: c.tier, status: c.status, ...(c.reason && { reason: c.reason }), ...(c.endedAt !== undefined && { endedAt: isoTime(c.endedAt) }) })
 
 export async function status(d: Deps) {
   const config = await d.api.config()
@@ -30,5 +30,6 @@ export async function status(d: Deps) {
   if (!accounts.length) summary.push('No running account: buy one with `mm monfunded buy --size 10k --pay usdc`.')
   for (const a of accounts) summary.push(...a.summary)
   if (me.past.length) summary.push(`${me.past.length} ended account${me.past.length > 1 ? 's' : ''}.`)
+  if (me.unreadablePast) summary.push(`${me.unreadablePast} ended account${me.unreadablePast > 1 ? 's' : ''} could not be read and ${me.unreadablePast > 1 ? 'are' : 'is'} left out.`)
   return { ...base, signedIn: true, sessionExpiresAt: new Date(session.expiresAt).toISOString(), accounts, pastAccounts: me.past.map(pastOf), plans, summary }
 }

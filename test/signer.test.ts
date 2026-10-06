@@ -42,6 +42,12 @@ test('a reverted transaction, a stranger as sender, or no hash are refusals', as
     return out
   }
   await assert.rejects(executorSigner(stranger, chain.reader, wallet.address).send(call, 'x'), code('WRONG_SIGNER'))
+  // Sent, but no receipt in time: it may still land, and the refusal carries its hash.
+  const lost = fakeChain()
+  lost.reader.receipt = async () => {
+    throw new Error('Timed out while waiting for transaction')
+  }
+  await assert.rejects(executorSigner(exec, lost.reader, wallet.address).send(call, 'x'), (e) => code('TX_UNCONFIRMED')(e) && /^0x[0-9a-f]{64}$/.test((e as PluginError).tx ?? '') && (e as Error).message.includes((e as PluginError).tx ?? 'none') && !/Timed out/.test((e as Error).message))
   const pending: Executor = async () => ({ kind: 'transaction', status: 'AWAITING_MFA' })
   await assert.rejects(executorSigner(pending, chain.reader, wallet.address).send(call, 'x'), (e) => code('NOT_SIGNED')(e) && /AWAITING_MFA/.test((e as Error).message))
   const unsigned: Executor = async () => ({ kind: 'signature', status: 'DENIED', failureDescription: 'denied by policy' })

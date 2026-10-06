@@ -20,5 +20,7 @@ export const pct = (n: number) => `${figure(n, { maximumFractionDigits: 2 })} %`
 // "$10,000", or the name the dashboard gave the plan.
 export const planName = (tier: Pick<Tier, 'name' | 'size'>) => tier.name ?? `$${tier.size.toLocaleString('en-US')}`
 export const txUrl = (hash: Hex) => `${EXPLORER_TX}${hash}`
+// A time in milliseconds as an ISO date; a figure no date can hold reads as unknown rather than throwing.
+export const isoTime = (ms: number) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : 'an unknown time')
 // perpl:BTC → BTC, fx:EURUSD → EUR/USD, fx:GER30 → GER30.
 export const symbolOf = (marketId: string) => marketId.replace(/^perpl:/, '').replace(/^fx:([A-Z]{3})([A-Z]{3})$/, '$1/$2').replace(/^fx:/, '')

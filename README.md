@@ -177,7 +177,7 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 - **`ENTRIES_CLOSED`**: the plan is paused, or MonFunded is taking no entries right now; nothing
   was paid.
 - **`BAD_CONFIG`**: MonFunded's API named a contract or a coin other than the ones this version
-  pins. Nothing was signed; check for a newer version of the plugin.
+  pins. Nothing was paid; check for a newer version of the plugin.
 - **`PAID_NOT_REGISTERED`**: the fee is paid but the account isn't started (the message says why).
   Don't pay again: run the `--entry-tx` command from the hint within 72 hours.
 - **`UNEXPECTED_MESSAGE`**: the server's sign-in message failed a check (the message says which).
@@ -191,7 +191,7 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 ## For developers
 
 ```sh
-npm test            # 79 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
+npm test            # 83 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
 npm run test:e2e    # the whole flow against a local MonFunded server and the real contract (see below)
 npm run typecheck
 npm run build

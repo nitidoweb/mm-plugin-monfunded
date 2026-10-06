@@ -158,6 +158,8 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `POSITIONS_OPEN` | A payout needs the account flat | Close every position first |
 | `PAYOUT_PENDING` | A payout is already pending a decision | Wait for it to be released or declined |
 | `UNDER_REVIEW`, `WITHDRAWAL_REJECTED` | The payout is held, or was declined | Wait, or tell the user |
-| `NOT_SIGNED`, `TX_DENIED`, `TX_EXPIRED` (mm's), `JOB_TIMEOUT` (mm's) | MetaMask didn't sign: denied, expired, or waiting for approval | Ask the user; `mm wallet requests list` |
+| `NOT_SIGNED`, `TX_DENIED`, `TX_EXPIRED` (mm's), `JOB_TIMEOUT` (mm's) | MetaMask didn't sign: denied, expired, or waiting for approval | Ask the user; `mm wallet requests list`. **Never run `buy` again while its fee request is still pending**: the user either approves it (then register with `--entry-tx`, as the hint says) or rejects it (then run `buy` again). Both pays the fee twice |
+| `TX_UNCONFIRMED` | A transaction was sent and Monad did not confirm it in time: it may still land | Don't send it again. Give the user the transaction; for `buy`, register it with the `--entry-tx` command from the hint once it is confirmed |
+| `PAID_UNCONFIRMED` | The fee is paid and MonFunded's answer could not be read: the account may have started | Never pay again. Run `status`: if the account is listed it started; if not, run the `--entry-tx` command from the hint |
 | `TX_REVERTED`, `WRONG_SIGNER` | The transaction failed on Monad, or came from another wallet | `status` and balances, then ask the user |
 | `NETWORK`, `NOT_JSON`, `RATE_LIMITED`, `API_ERROR` | MonFunded or the network didn't answer normally | Wait and try once more |

@@ -141,7 +141,16 @@ export async function buy(d: Deps, input: BuyInput) {
   // transaction goes only while the server and the contract still price it as confirmed.
   for (const s of steps) {
     await stillPriced(d, contract, tier)
-    entryTx = await signer.send(s.fresh ? await s.fresh() : s.call, s.summary)
+    const call = s.fresh ? await s.fresh() : s.call
+    // The last step pays the fee. One that MetaMask holds for an approval, or that was sent and not
+    // confirmed in time, may still pay it after this command has given up: the refusal then says
+    // how to register that payment, and never to pay again on top of it.
+    entryTx = await signer.send(call, s.summary).catch((e: unknown) => {
+      if (s !== steps.at(-1) || !(e instanceof PluginError)) throw e
+      if (e.code === 'TX_UNCONFIRMED' && e.tx) throw new PluginError(e.code, e.message, `Don’t pay again: the fee may be paid. Once ${txUrl(e.tx as Hex)} is confirmed, register it: ${again} --entry-tx ${e.tx}`, e.tx)
+      if (e.code === 'NOT_SIGNED') throw new PluginError(e.code, `${e.message} The fee was not paid by this command.`, `If the fee’s request is waiting for an approval in MetaMask (\`mm wallet requests list\`), choose one, never both, or it pays the fee twice: approve it there and then register that payment with ${again} --entry-tx <the transaction’s hash>; or reject it and run this command again.`)
+      throw e
+    })
   }
   return { ...(await register(d, tier, entryTx as Hex, again)), plan }
 }
@@ -149,13 +158,15 @@ export async function buy(d: Deps, input: BuyInput) {
 // The server's refusals that registering again can't change: the plan's price went up after the
 // payment, or the entry is older than the server takes.
 const FINAL = new Set(['ENTRY_UNDERPAID', 'ENTRY_EXPIRED'])
+const UNREAD = new Set(['BAD_RESPONSE', 'NOT_JSON', 'NETWORK', 'ABORTED'])
 
 // Registers a mined entry with MonFunded and returns the new account. The server reads the
 // receipt from its own RPC, which can trail the wallet's by a block or two: an entry it can't
 // verify yet is retried. Any other failure comes after the fee is paid, and says so under one code
 // of its own (PAID_NOT_REGISTERED, never the server's, which before a payment means nothing was
 // paid) with how to register the entry without paying again; those registering again can't fix
-// (FINAL) keep their own code and hint.
+// (FINAL) keep their own code and hint. An answer the plugin could not read or did not get
+// (UNREAD) is not a refusal: the account may have started.
 async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -170,6 +181,8 @@ async function register(d: Deps, tier: Tier, entryTx: Hex, again: string) {
       const why = e instanceof Error ? e.message : String(e)
       if (e instanceof PluginError && FINAL.has(e.code)) throw new PluginError(e.code, `${why} The entry is ${entryTx}.`, e.hint)
       if (e instanceof PluginError && e.code === 'ENTRY_NOT_VERIFIED') throw new PluginError(e.code, `${why} The entry is ${entryTx}.`, `Register it without paying again: ${again} --entry-tx ${entryTx}`)
+      if (e instanceof PluginError && UNREAD.has(e.code))
+        throw new PluginError('PAID_UNCONFIRMED', `The fee is paid, and the account may or may not have started: the plugin got no answer it could read from MonFunded (${e.code}). ${why} The entry is ${entryTx}.`, `Don’t pay again. Run \`mm monfunded status\` first: if the new account is listed, it started. If it is not, register the entry within 72 hours of its payment: ${again} --entry-tx ${entryTx}`)
       throw new PluginError(
         'PAID_NOT_REGISTERED',
         `The fee is paid, but MonFunded did not start the account${e instanceof PluginError ? ` (${e.code})` : ''}: ${why} The entry is ${entryTx}.`,

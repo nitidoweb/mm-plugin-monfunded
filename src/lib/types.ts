@@ -114,7 +114,8 @@ export type Challenge = {
   payoutPending?: true
 }
 
-export type Me = { address: Address; active: Challenge[]; past: Challenge[] }
+// `unreadablePast`: how many ended accounts the plugin left out because it could not read them.
+export type Me = { address: Address; active: Challenge[]; past: Challenge[]; unreadablePast?: number }
 
 export type Quote = {
   price: number

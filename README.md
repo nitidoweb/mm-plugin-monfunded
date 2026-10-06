@@ -200,7 +200,8 @@ EVM, and drives the plugin's flows with a stand-in for MetaMask's executor, chec
 every payment. It reaches the server the way a developer would, in developer mode
 (`MONFUNDED_DEV=1` with `MONFUNDED_API_URL`), so the local contract is trusted. `npm run test:e2e --
 --serve` uses the production `server/serve.mjs` instead (after `npm run build` at the root). The
-repository's `npm run lint` covers this folder.
+repository's `npm run lint` covers this folder. `npm test` and `npm run test:e2e` both run in the
+deploy gate (`ops/deploy.sh`), so a server change that breaks the plugin stops the deploy.
 
 If MonFunded ever deploys a new contract: set `MONFUNDED_CONTRACT` in `src/lib/constants.ts` to the
 address `scripts/deploy-contract.mjs` printed, raise the version in `package.json` and

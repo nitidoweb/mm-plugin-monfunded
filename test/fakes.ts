@@ -27,8 +27,8 @@ const rules = (risk: 'tight' | 'medium', size: number): Rules =>
   risk === 'tight' ? { size, dailyLossPct: 3, maxDrawdownPct: 3, profitTargetPct: 9, leverage: LEVERAGE } : { size, dailyLossPct: 4, maxDrawdownPct: 7, profitTargetPct: 10, leverage: LEVERAGE }
 
 export const TIERS: Tier[] = [
-  { id: 'tight-5000', index: 0, risk: 'tight', size: 5000, feeUsd: 30, rules: rules('tight', 5000) },
-  { id: 'medium-10000', index: 8, risk: 'medium', size: 10000, feeUsd: 100, rules: rules('medium', 10000) },
+  { id: 'plan-5000', index: 0, size: 5000, feeUsd: 30, rules: rules('tight', 5000) },
+  { id: 'plan-10000', index: 8, size: 10000, feeUsd: 100, rules: rules('medium', 10000) },
 ]
 
 export const config = (over: Partial<ChallengeConfig> = {}): ChallengeConfig => ({ tiers: TIERS, profitSplitPct: 80, minWithdrawUsd: 10, contract: CONTRACT, usdc: USDC, ausd: AUSD, monMarket: MON_MARKET, reserveUsd: 1000, reserves: { USDC: 800, AUSD: 200 }, ...over })
@@ -38,7 +38,7 @@ export const progress = (over: Partial<RuleProgress> = {}): RuleProgress => ({ e
 export const account = (over: Partial<Challenge> = {}): Challenge => ({
   id: ACCOUNT_ID,
   trader: wallet.address,
-  tier: 'tight-5000',
+  tier: 'plan-5000',
   status: 'assessment',
   startedAt: T0 - 3_600_000,
   balance: 5000,
@@ -80,7 +80,8 @@ export function fakeApi(routes: Record<string, Handler>, options: ApiOptions = {
       method: init.method ?? 'GET',
       path: new URL(url).pathname.replace(/^\/challenge/, ''),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
-      cookie: /monfunded_session=([0-9a-f]{64})/.exec(headers.cookie ?? '')?.[1],
+      // By the server's own name for it, whole: any other name reads as no session.
+      cookie: /^__Host-monfunded_session=([0-9a-f]{64})$/.exec(headers.cookie ?? '')?.[1],
       headers,
     }
     calls.push(call)

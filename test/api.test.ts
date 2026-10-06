@@ -50,21 +50,21 @@ test('MonFunded’s newer refusals carry their figures: the day’s order limit,
   const retryAt = Date.UTC(2026, 8, 16)
   const { api } = fakeApi({
     [`POST /${id}/orders`]: () => reply(429, { error: 'orderLimit', limit: 500, retryAt }),
-    'POST /enter': (b) => (b?.tier === 'tight-5000' ? reply(400, { error: 'entryUnderpaid', paidUsd: 30, feeUsd: 35 }) : reply(400, { error: 'entryExpired', maxAgeHours: 72 })),
+    'POST /enter': (b) => (b?.tier === 'plan-5000' ? reply(400, { error: 'entryUnderpaid', paidUsd: 30, feeUsd: 35 }) : reply(400, { error: 'entryExpired', maxAgeHours: 72 })),
   })
   const message = (e: unknown) => (e as Error).message
   await assert.rejects(api.order(id, { marketId: 'perpl:BTC', side: 'long', notional: 100, leverage: 1 }), (e) => code('ORDER_LIMIT')(e) && /500 orders a day/.test(message(e)) && message(e).includes(new Date(retryAt).toISOString()))
-  await assert.rejects(api.enter('tight-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && /It paid \$30\.00; the plan costs \$35\.00\./.test(message(e)))
-  await assert.rejects(api.enter('medium-10000', tx), (e) => code('ENTRY_EXPIRED')(e) && /72 hours old/.test(message(e)))
+  await assert.rejects(api.enter('plan-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && /It paid \$30\.00; the plan costs \$35\.00\./.test(message(e)))
+  await assert.rejects(api.enter('plan-10000', tx), (e) => code('ENTRY_EXPIRED')(e) && /72 hours old/.test(message(e)))
   // Extras that aren't numbers are left out rather than printed.
   const odd = fakeApi({ 'POST /enter': () => reply(400, { error: 'entryUnderpaid', paidUsd: '30', feeUsd: null }) })
-  await assert.rejects(odd.api.enter('tight-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && !/\$/.test(message(e)))
+  await assert.rejects(odd.api.enter('plan-5000', tx), (e) => code('ENTRY_UNDERPAID')(e) && !/\$/.test(message(e)))
 })
 
 test('verify sends the address, the nonce and the signature, keeps the session cookie and its lifetime, and refuses an answer without one', async () => {
   const cookie = 'ab'.repeat(32)
   const nonce = 'cd'.repeat(16)
-  const good = fakeApi({ 'POST /auth/verify': () => reply(200, { address: wallet.address }, { 'set-cookie': `monfunded_session=${cookie}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict` }) })
+  const good = fakeApi({ 'POST /auth/verify': () => reply(200, { address: wallet.address }, { 'set-cookie': `__Host-monfunded_session=${cookie}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict` }) })
   const before = Date.now()
   const s = await good.api.verify(wallet.address, nonce, '0x1234')
   assert.deepEqual(good.calls[0].body, { address: wallet.address, nonce, signature: '0x1234' })
@@ -72,7 +72,7 @@ test('verify sends the address, the nonce and the signature, keeps the session c
   assert.ok(s.expiresAt >= before + 604_800_000 && s.expiresAt <= Date.now() + 604_800_000)
   const bad = fakeApi({ 'POST /auth/verify': () => reply(200, { address: wallet.address }) })
   await assert.rejects(bad.api.verify(wallet.address, nonce, '0x1234'), code('BAD_RESPONSE'))
-  const other = fakeApi({ 'POST /auth/verify': () => reply(200, { address: '0x0000000000000000000000000000000000000001' }, { 'set-cookie': `monfunded_session=${cookie}; Max-Age=60` }) })
+  const other = fakeApi({ 'POST /auth/verify': () => reply(200, { address: '0x0000000000000000000000000000000000000001' }, { 'set-cookie': `__Host-monfunded_session=${cookie}; Max-Age=60` }) })
   await assert.rejects(other.api.verify(wallet.address, nonce, '0x1234'), code('BAD_RESPONSE'))
 })
 
@@ -95,15 +95,12 @@ test('the config must name the pinned contract and Kuru’s MON_USDC book, whate
   assert.equal((await read(config({ contract: null, monMarket: null }))).monMarket, null)
   await assert.rejects(read(config({ contract: other })), (e) => code('BAD_CONFIG')(e) && (e as Error).message.includes(other))
   await assert.rejects(read(config({ monMarket: other })), (e) => code('BAD_CONFIG')(e) && (e as Error).message.includes('MON_USDC'))
-  // Released before the deployment (no pin yet): it pays no contract, and says to update.
-  assert.equal((await read(config({ contract: null }), { pinnedContract: null })).contract, null)
-  await assert.rejects(read(config(), { pinnedContract: null }), (e) => code('PLUGIN_OUTDATED')(e) && /Update the plugin/.test((e as PluginError).hint))
-  // By default the pin is MONFUNDED_CONTRACT (null until MonFunded deploys its contract).
-  const pinned = read(config({ contract: MONFUNDED_CONTRACT ?? CONTRACT }), {})
-  if (MONFUNDED_CONTRACT === null) await assert.rejects(pinned, code('PLUGIN_OUTDATED'))
-  else assert.equal((await pinned).contract, MONFUNDED_CONTRACT)
+  // By default the pin is MONFUNDED_CONTRACT: the contract MonFunded deployed on Monad, and no other.
+  assert.equal(MONFUNDED_CONTRACT, '0x6B8e2bA530D44298Dea8512eDF17D01181459f36')
+  assert.equal((await read(config({ contract: MONFUNDED_CONTRACT }), {})).contract, MONFUNDED_CONTRACT)
+  await assert.rejects(read(config(), {}), (e) => code('BAD_CONFIG')(e) && (e as Error).message.includes(MONFUNDED_CONTRACT))
   // A developer's server (MONFUNDED_DEV=1 with MONFUNDED_API_URL) names its own; the coins stay pinned.
-  const dev = await read(config({ contract: other, monMarket: other }), { dev: true, pinnedContract: null })
+  const dev = await read(config({ contract: other, monMarket: other }), { dev: true })
   assert.deepEqual([dev.contract, dev.monMarket], [other, other])
   await assert.rejects(read(config({ ausd: other }), { dev: true }), code('BAD_CONFIG'))
   await assert.rejects(read(config({ contract: '0x12' as `0x${string}` }), { dev: true }), code('BAD_CONFIG'))

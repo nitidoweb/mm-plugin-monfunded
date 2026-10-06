@@ -30,7 +30,7 @@ export function planLines(plan: Plan): string[] {
     `  Amount:   ${plan.amount}`,
     `  From:     ${plan.from}`,
     `  To:       ${plan.to}`,
-    `  Contract: ${plan.contract ?? 'not deployed yet'}`,
+    `  Contract: ${plan.contract ?? 'none named by MonFunded right now'}`,
     `  Chain:    ${plan.chain}`,
     ...plan.steps.map((s, i) => `  Step ${i + 1}:   ${s}`),
     ...plan.notes.map((n) => `  Note:     ${n}`),

@@ -51,7 +51,7 @@ test('login signs exactly the server’s message, sends its nonce back, keeps th
       assert.equal(b?.address, wallet.address)
       assert.equal(b?.nonce, NONCE)
       assert.equal(await recoverMessageAddress({ message, signature: b?.signature as Hex }), wallet.address)
-      return reply(200, { address: wallet.address }, { 'set-cookie': `monfunded_session=${NEW_COOKIE}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict` })
+      return reply(200, { address: wallet.address }, { 'set-cookie': `__Host-monfunded_session=${NEW_COOKIE}; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict; Secure` })
     },
     'GET /me': () => ({ address: wallet.address, active: [account()], past: [] }),
   })

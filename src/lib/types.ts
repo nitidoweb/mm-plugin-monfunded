@@ -4,7 +4,6 @@
 export type Address = `0x${string}`
 export type Hex = `0x${string}`
 
-export type Risk = 'tight' | 'medium'
 export type PayoutToken = 'USDC' | 'AUSD'
 export type PayWith = PayoutToken | 'MON'
 export type Side = 'long' | 'short'
@@ -15,12 +14,13 @@ export type Rules = {
   maxDrawdownPct: number
   profitTargetPct: number
   leverage: Record<string, number>
+  // The most one UTC day may be worth, as a share of the phase's profit (absent on old accounts).
+  consistencyPct?: number
 }
 
 export type Tier = {
   id: string
   index: number
-  risk: Risk
   size: number
   feeUsd: number
   rules: Rules
@@ -56,7 +56,7 @@ export type Position = {
   exitPrice?: number
   closedAt?: number
   pnl?: number
-  closedBy?: 'trader' | 'liquidation' | 'end'
+  closedBy?: 'trader' | 'liquidation' | 'stopOut' | 'end' | 'guard' | 'sl' | 'tp'
 }
 
 export type RuleProgress = {
@@ -70,6 +70,11 @@ export type RuleProgress = {
   target: number
   withdrawable: number
   withdrawablePaid: number
+  // The consistency rule as it stands: the phase's best UTC day, its profit, the day's share of it,
+  // the limit, whether it is inside it, and the profit that would bring it inside.
+  consistency?: { bestDay: number; profit: number; sharePct: number; limitPct: number; ok: boolean; need: number }
+  // Margin in use at current prices, free margin, and the level in % (null: nothing uses margin).
+  margin?: { used: number; free: number; level: number | null; call: boolean }
 }
 
 export type Withdrawal = {
@@ -77,7 +82,7 @@ export type Withdrawal = {
   amountUsd: number
   paidUsd: number
   token: PayoutToken
-  status?: 'review' | 'rejected'
+  status?: 'review' | 'rejected' | 'queued'
   requestedAt: number
   tx?: Hex
   paidAt?: number
@@ -86,6 +91,8 @@ export type Withdrawal = {
 export type ChallengeStatus = 'assessment' | 'funded' | 'failed'
 
 export type Challenge = {
+  // A practice account: nothing was paid for it and it pays nothing out.
+  demo?: true
   id: string
   trader: Address
   tier: string
@@ -101,6 +108,10 @@ export type Challenge = {
   trades: number
   withdrawals: Withdrawal[]
   entryTx: Hex
+  // One of its positions has no live price: no order, withdrawal or claim until it does.
+  frozen?: true
+  // A payout is waiting on a decision: no new order until it is released or declined.
+  payoutPending?: true
 }
 
 export type Me = { address: Address; active: Challenge[]; past: Challenge[] }

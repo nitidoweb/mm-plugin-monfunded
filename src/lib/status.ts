@@ -8,14 +8,14 @@ import type { Challenge, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
 const plansOf = (tiers: Tier[]) =>
-  tiers.filter((t) => t.enabled !== false).map((t) => ({ plan: planName(t), id: t.id, risk: t.risk, size: t.size, feeUsd: t.feeUsd, profitTargetPct: t.rules.profitTargetPct, dailyLossPct: t.rules.dailyLossPct, maxDrawdownPct: t.rules.maxDrawdownPct }))
+  tiers.filter((t) => t.enabled !== false).map((t) => ({ plan: planName(t), id: t.id, size: t.size, feeUsd: t.feeUsd, profitTargetPct: t.rules.profitTargetPct, dailyLossPct: t.rules.dailyLossPct, maxDrawdownPct: t.rules.maxDrawdownPct, ...(t.rules.consistencyPct !== undefined && { consistencyPct: t.rules.consistencyPct }) }))
 
 const pastOf = (c: Challenge) => ({ id: c.id, tier: c.tier, status: c.status, ...(c.reason && { reason: c.reason }), ...(c.endedAt !== undefined && { endedAt: new Date(c.endedAt).toISOString() }) })
 
 export async function status(d: Deps) {
   const config = await d.api.config()
   const plans = plansOf(config.tiers)
-  const entries = config.contract ? `Entries are open: fees go to the MonFunded contract ${config.contract} on Monad.` : 'Entries open once the MonFunded contract is deployed on Monad (not yet).'
+  const entries = config.contract ? `Entries are open: fees go to the MonFunded contract ${config.contract} on Monad.` : 'Entries are closed right now: MonFunded names no contract to pay.'
   const base = { wallet: d.wallet, api: d.api.base, entriesOpen: config.contract !== null, contract: config.contract }
   const session = d.store.get(d.api.base, d.now())
   if (!session || session.address.toLowerCase() !== d.wallet.toLowerCase()) {
@@ -27,7 +27,7 @@ export async function status(d: Deps) {
   const now = d.now()
   const accounts = me.active.map((c) => accountView(c, config.tiers, prices, now))
   const summary = [`Signed in to MonFunded (${d.api.base}) as ${d.wallet}.`, entries]
-  if (!accounts.length) summary.push('No running account: buy one with `mm monfunded buy --size 5k --risk tight --pay usdc`.')
+  if (!accounts.length) summary.push('No running account: buy one with `mm monfunded buy --size 10k --pay usdc`.')
   for (const a of accounts) summary.push(...a.summary)
   if (me.past.length) summary.push(`${me.past.length} ended account${me.past.length > 1 ? 's' : ''}.`)
   return { ...base, signedIn: true, sessionExpiresAt: new Date(session.expiresAt).toISOString(), accounts, pastAccounts: me.past.map(pastOf), plans, summary }

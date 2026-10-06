@@ -26,13 +26,15 @@ const buyRoutes = (over: Routes = {}): Routes => ({
   'POST /enter': (b) => account({ tier: String(b?.tier), entryTx: b?.entryTx as Hex }),
   ...over,
 })
-const TIGHT_5K = { size: 5000, risk: 'tight', pay: 'USDC' } as const
+const TIGHT_5K = { size: 5000, pay: 'USDC' } as const
+const nth = (n: number, over: Partial<ReturnType<typeof account>> = {}) => account({ id: `0x${n.toString(16).padStart(64, '0')}`, ...over })
 
-test('buy refuses before paying: signed out, another wallet’s session, no contract, an assessment running, no such plan', async () => {
+test('buy refuses before paying: signed out, another wallet’s session, no contract, the wallet at one of its limits, no such plan', async () => {
   const cases: [Routes, Parameters<typeof makeDeps>[1], Parameters<typeof buy>[1], string][] = [
     [buyRoutes(), { signedIn: false }, TIGHT_5K, 'NOT_SIGNED_IN'],
     [buyRoutes({ 'GET /config': () => config({ contract: null }) }), {}, TIGHT_5K, 'ENTRIES_CLOSED'],
-    [buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: [account()], past: [] }) }), {}, TIGHT_5K, 'ALREADY_ACTIVE'],
+    [buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: [1, 2, 3, 4, 5].map((n) => nth(n)), past: [] }) }), {}, TIGHT_5K, 'TOO_MANY_ASSESSMENTS'],
+    [buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: [nth(1, { status: 'funded', rules: { ...account().rules, size: 396_000 } })], past: [] }) }), {}, TIGHT_5K, 'FUNDED_CAP'],
     [buyRoutes(), {}, { ...TIGHT_5K, size: 7000 }, 'UNKNOWN_PLAN'],
   ]
   for (const [routes, opts, input, expected] of cases) {
@@ -48,8 +50,9 @@ test('buy refuses before paying: signed out, another wallet’s session, no cont
   await assert.rejects(buy(other.d, TIGHT_5K), code('WRONG_WALLET'))
 })
 
-test('a funded account doesn’t block a new assessment', async () => {
-  const { api } = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active: [account({ status: 'funded' })], past: [] }) }))
+test('under the limits a wallet buys again: four assessments running, funded size that still fits, practice accounts uncounted', async () => {
+  const active = [...[1, 2, 3, 4].map((n) => nth(n)), nth(5, { demo: true }), nth(6, { status: 'funded', rules: { ...account().rules, size: 395_000 } }), nth(7, { demo: true, status: 'funded', rules: { ...account().rules, size: 200_000 } })]
+  const { api } = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active, past: [] }) }))
   const { d } = makeDeps(api)
   assert.equal((await buy(d, TIGHT_5K)).done, false)
 })
@@ -86,7 +89,7 @@ test('buy --yes approves exactly the fee, enters, and registers the entry', asyn
   assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: enter.data }), { functionName: 'enter', args: [0] })
   const post = calls.find((c) => c.path === '/enter')
   assert.ok(r.done && 'entryTx' in r)
-  assert.deepEqual(post?.body, { tier: 'tight-5000', entryTx: r.entryTx })
+  assert.deepEqual(post?.body, { tier: 'plan-5000', entryTx: r.entryTx })
   assert.equal(post?.cookie, COOKIE)
 })
 
@@ -96,7 +99,7 @@ test('an allowance in place skips the approval; AUSD pays through enterWithAusd'
   await buy(one.d, TIGHT_5K)
   assert.equal(one.executor.requests.length, 1)
   const ausd = makeDeps(api, { yes: true, chain: fakeChain({ fee: 100_000_000n, ausd: 100_000_000n }) })
-  await buy(ausd.d, { size: 10_000, risk: 'medium', pay: 'AUSD' })
+  await buy(ausd.d, { size: 10_000, pay: 'AUSD' })
   assert.equal(txOf(ausd.executor.requests[0]).to, AUSD)
   assert.deepEqual(decodeFunctionData({ abi: CHALLENGE_ABI, data: txOf(ausd.executor.requests[1]).data }), { functionName: 'enterWithAusd', args: [8] })
 })
@@ -179,7 +182,7 @@ test('a repricing while the payment is shown, or between the approval and the en
   // The server's plan is repriced once the approval is sent (its third config read): the entry
   // never goes, and nothing is registered.
   let reads = 0
-  const repriced = fakeApi(buyRoutes({ 'GET /config': () => (++reads >= 3 ? config({ tiers: TIERS.map((t) => (t.id === 'tight-5000' ? { ...t, feeUsd: 35 } : t)) }) : config()) }))
+  const repriced = fakeApi(buyRoutes({ 'GET /config': () => (++reads >= 3 ? config({ tiers: TIERS.map((t) => (t.id === 'plan-5000' ? { ...t, feeUsd: 35 } : t)) }) : config()) }))
   const two = makeDeps(repriced.api, { yes: true })
   await assert.rejects(buy(two.d, TIGHT_5K), (e) => code('FEE_CHANGING')(e) && /MonFunded lists \$35\.00/.test((e as Error).message))
   assert.equal(two.executor.requests.length, 1, 'the approval only')
@@ -187,7 +190,7 @@ test('a repricing while the payment is shown, or between the approval and the en
   assert.ok(!repriced.calls.some((c) => c.path === '/enter'))
   // A plan paused meanwhile: no entry either.
   let seen = 0
-  const paused = fakeApi(buyRoutes({ 'GET /config': () => (++seen >= 2 ? config({ tiers: TIERS.map((t) => ({ ...t, enabled: t.id !== 'tight-5000' })) }) : config()) }))
+  const paused = fakeApi(buyRoutes({ 'GET /config': () => (++seen >= 2 ? config({ tiers: TIERS.map((t) => ({ ...t, enabled: t.id !== 'plan-5000' })) }) : config()) }))
   const three = makeDeps(paused.api, { yes: true })
   await assert.rejects(buy(three.d, TIGHT_5K), code('ENTRIES_CLOSED'))
   assert.equal(three.executor.requests.length, 0)
@@ -216,7 +219,7 @@ test('an entry the server can’t see yet is retried; a failure after paying say
   assert.equal(tries, 3)
   assert.equal(one.clock.now, T0 + 4_000)
   const never = fakeApi(buyRoutes({ 'POST /enter': () => reply(400, { error: 'entryNotVerified' }) }))
-  await assert.rejects(buy(makeDeps(never.api, { yes: true }).d, TIGHT_5K), (e) => code('ENTRY_NOT_VERIFIED')(e) && /^Register it without paying again: mm monfunded buy --size 5k --risk tight --entry-tx 0x[0-9a-f]{64}$/.test((e as PluginError).hint))
+  await assert.rejects(buy(makeDeps(never.api, { yes: true }).d, TIGHT_5K), (e) => code('ENTRY_NOT_VERIFIED')(e) && /^Register it without paying again: mm monfunded buy --size 5k --pay usdc --entry-tx 0x[0-9a-f]{64}$/.test((e as PluginError).hint))
 })
 
 test('an entry the server refuses for good (underpaid after a price change, too old) keeps its own hint, unretried', async () => {
@@ -246,7 +249,7 @@ test('--entry-tx registers an entry already paid, without paying again', async (
   const { d, executor } = makeDeps(api)
   assert.equal((await buy(d, { ...TIGHT_5K, entryTx })).done, true)
   assert.equal(executor.requests.length, 0)
-  assert.deepEqual(calls.find((c) => c.path === '/enter')?.body, { tier: 'tight-5000', entryTx })
+  assert.deepEqual(calls.find((c) => c.path === '/enter')?.body, { tier: 'plan-5000', entryTx })
 })
 
 // ---- status ----
@@ -258,7 +261,7 @@ test('signed out, status still answers: the plans, whether entries are open, how
   assert.equal(r.entriesOpen, false)
   assert.deepEqual(
     r.plans.map((p) => p.id),
-    ['tight-5000', 'medium-10000'],
+    ['plan-5000', 'plan-10000'],
   )
   assert.match(r.summary.join('\n'), /mm monfunded login/)
 })
@@ -269,11 +272,16 @@ test('signed in, status reports each account’s rule meters, positions and with
     id: `0x${'b2'.repeat(32)}`,
     status: 'funded',
     progress: progress({ equity: 5200, balance: 5200, profit: 200, target: 0, withdrawable: 200, withdrawablePaid: 160, dailyPnl: -20 }),
-    withdrawals: [{ id: `0x${'c3'.repeat(32)}`, amountUsd: 50, paidUsd: 40, token: 'USDC', status: 'review', requestedAt: T0 }],
+    withdrawals: [
+      { id: `0x${'c3'.repeat(32)}`, amountUsd: 50, paidUsd: 40, token: 'USDC', status: 'review', requestedAt: T0 },
+      { id: `0x${'c4'.repeat(32)}`, amountUsd: 50, paidUsd: 40, token: 'USDC', status: 'queued', requestedAt: T0 },
+    ],
+    payoutPending: true,
   })
+  const stopped: Position = { id: 'p000000000002', marketId: 'perpl:BTC', side: 'long', status: 'closed', notional: 1000, leverage: 2, margin: 500, requestedAt: T0 - 90_000, entryPrice: 59_000, openedAt: T0 - 80_000, exitPrice: 58_000, closedAt: T0 - 70_000, pnl: -16.95, closedBy: 'stopOut' }
   const { api, calls } = fakeApi({
     'GET /config': () => config(),
-    'GET /me': () => ({ address: wallet.address, active: [account({ positions: [open], progress: progress({ profit: 45, dailyPnl: 16.95 }) }), funded], past: [account({ id: `0x${'d4'.repeat(32)}`, status: 'failed', reason: 'dailyLoss', endedAt: T0 - 1000 })] }),
+    'GET /me': () => ({ address: wallet.address, active: [account({ positions: [open, stopped], progress: progress({ profit: 450, dailyPnl: 16.95, consistency: { bestDay: 300, profit: 450, sharePct: 66.67, limitPct: 30, ok: false, need: 1000 }, margin: { used: 500, free: 4516.95, level: 1003.39, call: false } }) }), funded], past: [account({ id: `0x${'d4'.repeat(32)}`, status: 'failed', reason: 'dailyLoss', endedAt: T0 - 1000 })] }),
     'GET /prices': () => PRICES,
   })
   const r = await status(makeDeps(api).d)
@@ -281,7 +289,12 @@ test('signed in, status reports each account’s rule meters, positions and with
   assert.ok(calls.filter((c) => c.path !== '/config').every((c) => c.cookie === COOKIE))
   assert.ok('accounts' in r)
   const [a, f] = r.accounts
-  assert.deepEqual(a.profitTarget, { profitUsd: 45, targetUsd: 450, progressPct: 10 })
+  assert.deepEqual(a.profitTarget, { profitUsd: 450, targetUsd: 450, progressPct: 100 })
+  // The target is reached, but one day made two thirds of it: the pass waits, and status says for what.
+  assert.deepEqual(a.consistency, { bestDayUsd: 300, sharePct: 66.67, limitPct: 30, ok: false, profitNeededUsd: 1000 })
+  assert.match(a.summary.join('\n'), /the best day \(\$300\.00\) is 66\.67 % of this phase’s profit; the limit is 30 %, so the pass waits until the profit reaches \$1,000\.00\./)
+  assert.equal(a.marginLevelPct, 1003.39)
+  assert.match(a.positions[1].summary, /closed by the stop-out: the account’s margin level fell to 50 %/)
   assert.deepEqual(a.dailyLoss, { roomUsd: 166.95, limitUsd: 150, todayPnlUsd: 16.95 })
   assert.deepEqual(a.drawdown, { roomUsd: 150, floorUsd: 4850 })
   assert.equal(a.positions[0].pnlUsd, 16.95)
@@ -289,8 +302,11 @@ test('signed in, status reports each account’s rule meters, positions and with
   assert.equal(a.positions[0].closableFrom, new Date(T0 + 30_000).toISOString())
   assert.deepEqual(f.withdrawable, { amountUsd: 200, youReceiveUsd: 160 })
   assert.equal(f.withdrawals[0].state, 'review')
+  assert.equal(f.withdrawals[1].state, 'queued')
+  assert.match(f.withdrawals[1].summary, /released and waiting its turn/)
+  assert.equal(f.payoutPending, true)
   assert.equal(r.pastAccounts[0].reason, 'dailyLoss')
-  assert.match(r.summary.join('\n'), /Tight \$5,000 assessment/)
+  assert.match(r.summary.join('\n'), /^\$5,000 assessment 0x/m)
 })
 
 test('a session saved for another wallet reads as signed out', async () => {

@@ -4,7 +4,7 @@
 // server stays the judge of every rule; these only make the plugin's answers clearer.
 import type { Address } from './types.ts'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 export const USER_AGENT = `mm-plugin-monfunded/${VERSION} (+https://monfunded.com/agents/)`
 
 // Monad mainnet: the contract, the coins and every transaction the plugin sends.
@@ -18,12 +18,10 @@ export const DEFAULT_API = 'https://monfunded.com'
 export const API_URL_ENV = 'MONFUNDED_API_URL'
 export const DEV_ENV = 'MONFUNDED_DEV'
 
-// MonFunded's contract on Monad (contracts/MonFundedChallenge.sol), pinned: the plugin pays fees
-// to and claims payouts from this address only, whatever the API names. It is null until the
-// contract is deployed; set it then (the address scripts/deploy-contract.mjs prints) and publish
-// the plugin again. While it is null the plugin pays no contract at all, and an API that names
-// one is refused with PLUGIN_OUTDATED.
-export const MONFUNDED_CONTRACT: Address | null = null
+// MonFunded's contract on Monad (contracts/MonFundedChallenge.sol v3, deployed 2026-10-05), pinned:
+// the plugin pays fees to and claims payouts from this address only, whatever the API names. An
+// API that names another is refused (BAD_CONFIG) and nothing is signed.
+export const MONFUNDED_CONTRACT: Address = '0x6B8e2bA530D44298Dea8512eDF17D01181459f36'
 // Kuru's MON_USDC book on Monad, where the contract sells a fee paid in MON (enterWithMon), pinned
 // the same way (src/config.ts in the MonFunded repository lists it too).
 export const MON_MARKET: Address = '0x065c9d28e428a0db40191a54d33d5b7c71a9c394'
@@ -52,11 +50,17 @@ export const KURU_API = 'https://exchange.kuru.io'
 export const USDC = '0x754704Bc059F8C67012fEd69BC8A327a5aafb603'
 export const AUSD = '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a'
 
-// The server's order rules: the smallest position, the minimum hold before a close, and the
-// share of a position's margin whose loss liquidates it.
+// The server's order rules: the smallest position, the minimum hold before a close, and the margin
+// levels (equity ÷ margin in use, in %) at which the account carries a margin call and at which the
+// server closes its largest losing position (the stop-out).
 export const MIN_NOTIONAL_USD = 10
 export const MIN_HOLD_MS = 60_000
-export const LIQUIDATION_LOSS = 0.9
+export const MARGIN_CALL_PCT = 100
+export const STOP_OUT_PCT = 50
+// What one wallet may hold at once: running assessments, and funded account size in dollars. The
+// server refuses an entry past either after the fee is paid, so buy checks them before paying.
+export const MAX_ASSESSMENTS = 5
+export const MAX_FUNDED_USD = 400_000
 // A challenge market's category, which keys the plan's leverage cap: Perpl's perps ('perpl:BTC') are
 // crypto; MonFunded liquidity's instruments forex, metal, baseMetal, energy or index, as the server's
 // catalogue classifies them (scripts/fx-catalog.mjs): a commodity by its asset code, any other

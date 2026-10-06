@@ -62,10 +62,11 @@ const proofPath = `GET /${ACCOUNT_ID}/withdrawals/${WID}/claim`
 const PROOF = { signature: `0x${'11'.repeat(65)}`, logRoot: `0x${'22'.repeat(32)}`, token: 'USDC' }
 const unpaid: Withdrawal = { id: WID, amountUsd: 100, paidUsd: 80, token: 'USDC', requestedAt: T0 }
 
-test('claim explains a payout held for review or declined, and reports one already paid', async () => {
+test('claim explains a payout held for review, declined or waiting under the daily limit, and reports one already paid', async () => {
   for (const [w, expected] of [
     [{ ...unpaid, status: 'review' }, 'UNDER_REVIEW'],
     [{ ...unpaid, status: 'rejected' }, 'WITHDRAWAL_REJECTED'],
+    [{ ...unpaid, status: 'queued' }, 'PAYOUT_QUEUED'],
   ] as const) {
     const { api, calls } = fakeApi({ 'GET /me': me(funded({ withdrawals: [w] })), 'GET /config': () => config() })
     await assert.rejects(claim(makeDeps(api, { yes: true }).d, { withdrawal: WID }), code(expected))

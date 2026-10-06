@@ -1,6 +1,6 @@
 {
   "name": "mm-plugin-monfunded",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "MonFunded for MetaMask Agent Wallet: an AI agent buys a MonFunded assessment, trades it and claims its payouts with the mm CLI, on Monad.",
   "homepage": "https://monfunded.com/agents/",

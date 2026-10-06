@@ -14,8 +14,8 @@ export const coin = (n: number, symbol: string) => `${n.toLocaleString('en-US', 
 // 406.1875 MON (wei to at most four decimals, rounded up so the figure is never short).
 export const mon = (wei: bigint) => `${Number(formatUnits(wei + 10n ** 14n - 1n - ((wei + 10n ** 14n - 1n) % 10n ** 14n), 18)).toLocaleString('en-US', { maximumFractionDigits: 4 })} MON`
 export const pct = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} %`
-// "Tight $5,000", or the name the dashboard gave the plan.
-export const planName = (tier: Pick<Tier, 'name' | 'risk' | 'size'>) => tier.name ?? `${tier.risk === 'tight' ? 'Tight' : 'Medium'} $${tier.size.toLocaleString('en-US')}`
+// "$10,000", or the name the dashboard gave the plan.
+export const planName = (tier: Pick<Tier, 'name' | 'size'>) => tier.name ?? `$${tier.size.toLocaleString('en-US')}`
 export const txUrl = (hash: Hex) => `${EXPLORER_TX}${hash}`
 // perpl:BTC → BTC, fx:EURUSD → EUR/USD, fx:GER30 → GER30.
 export const symbolOf = (marketId: string) => marketId.replace(/^perpl:/, '').replace(/^fx:([A-Z]{3})([A-Z]{3})$/, '$1/$2').replace(/^fx:/, '')

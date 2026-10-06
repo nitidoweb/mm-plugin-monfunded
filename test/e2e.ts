@@ -317,7 +317,7 @@ async function releaseAsAdmin(withdrawalId: Hex) {
   const { nonce, message } = await adminApi.nonce(admin.address)
   const signature = await admin.signMessage({ message })
   const { cookie } = await adminApi.verify(admin.address, nonce, signature)
-  const res = await apiFetch(`${BASE}/challenge/admin/payouts/${withdrawalId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: `monfunded_session=${cookie}` }, body: '{}' })
+  const res = await apiFetch(`${BASE}/challenge/admin/payouts/${withdrawalId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: `__Host-monfunded_session=${cookie}` }, body: '{}' })
   assert.equal(res.status, 200, `admin release of ${withdrawalId} failed: ${await res.text()}`)
 }
 
@@ -353,28 +353,25 @@ try {
   show('login', signedIn)
   assert.equal(signedIn.wallet, trader.address)
 
-  const preview = await buy(deps(), { size: 5000, risk: 'tight', pay: 'USDC' })
-  show('buy --size 5k --risk tight --pay usdc', preview)
+  const preview = await buy(deps(), { size: 10_000, pay: 'USDC' })
+  show('buy --size 10k --pay usdc', preview)
   assert.equal(preview.done, false)
   assert.equal(await balanceOf(USDC, trader.address), 1_000_000_000n, 'a preview pays nothing')
 
   approve = true
-  const bought = await buy(deps(), { size: 5000, risk: 'tight', pay: 'USDC' })
-  show('buy --size 5k --risk tight --pay usdc --yes', bought)
+  const bought = await buy(deps(), { size: 10_000, pay: 'USDC' })
+  show('buy --size 10k --pay usdc --yes', bought)
   assert.ok(bought.done && 'account' in bought)
-  assert.equal(await balanceOf(USDC, trader.address), 970_000_000n, 'the trader paid the $30 fee')
-  assert.equal(await balanceOf(USDC, contract), 530_000_000n, 'the fee is in the USDC reserve')
+  assert.equal(await balanceOf(USDC, trader.address), 911_000_000n, 'the trader paid the $89 fee')
+  assert.equal(await balanceOf(USDC, contract), 589_000_000n, 'the fee is in the USDC reserve')
   note(`Chain: the trader holds ${usdc(await balanceOf(USDC, trader.address))} USDC; the contract’s USDC reserve holds ${usdc(await balanceOf(USDC, contract))}.`)
 
-  await refused('buy --size 5k --risk tight --pay usdc --yes', buy(deps(), { size: 5000, risk: 'tight', pay: 'USDC' }), 'ALREADY_ACTIVE')
-  assert.equal(await balanceOf(USDC, trader.address), 970_000_000n, 'a refused buy pays nothing')
-
   const BTC = { market: 'perpl:BTC', side: 'long' } as const
-  const caution = await coach(deps(), { ...BTC, notional: 20_000, leverage: 5 })
-  show('coach --market BTC --side long --notional 20000 --leverage 5', caution)
+  const caution = await coach(deps(), { ...BTC, notional: 40_000, leverage: 5 })
+  show('coach --market BTC --side long --notional 40000 --leverage 5', caution)
   assert.equal(caution.verdict, 'caution')
-  const blocked = await coach(deps(), { ...BTC, notional: 5000, leverage: 6 })
-  show('coach --market BTC --side long --notional 5000 --leverage 6', blocked)
+  const blocked = await coach(deps(), { ...BTC, notional: 5000, leverage: 16 })
+  show('coach --market BTC --side long --notional 5000 --leverage 16', blocked)
   assert.equal(blocked.verdict, 'blocked')
   const fine = await coach(deps(), { ...BTC, notional: 5000, leverage: 2 })
   show('coach --market BTC --side long --notional 5000 --leverage 2', fine)
@@ -385,20 +382,44 @@ try {
   assert.equal(first.position.status, 'open')
   assert.equal(first.position.entryPrice, 60_000.5)
   await refused(`close --position ${first.position.id}`, close(deps(), { position: first.position.id }), 'HOLD_TIME')
+  await refused('order --market BTC --side short --notional 5000 --leverage 2', order(deps(), { ...BTC, side: 'short', notional: 5000, leverage: 2 }), 'HEDGING')
 
-  note('BTC rises to 65,500 and a minute passes.')
-  setBtc(65_500)
-  clock.now += 61_000
-  const passed = await close(deps(), { position: first.position.id })
-  show(`close --position ${first.position.id}`, passed)
-  assert.equal(passed.passed, true)
-  assert.equal(passed.accountStatus, 'funded')
+  // The 10 % target is $1,000, and no day may be worth more than 30 % of the profit at the pass:
+  // four days of about $275 each. After the first, that day is all of the profit, so status says the
+  // pass would wait.
+  let passed: Awaited<ReturnType<typeof close>> | undefined
+  let live = first
+  for (let day = 1; day <= 4; day++) {
+    note(`Day ${day}: BTC rises to 63,300 and a minute passes.`)
+    setBtc(63_300)
+    clock.now += 61_000
+    passed = await close(deps(), { position: live.position.id })
+    show(`close --position ${live.position.id}`, passed)
+    if (day === 1) {
+      const one = await status(deps())
+      assert.ok(one.signedIn && 'accounts' in one)
+      assert.equal(one.accounts[0].consistency?.ok, false, 'one day is all of the profit so far')
+      assert.equal(one.accounts[0].consistency?.limitPct, 30)
+    }
+    if (day === 4) break
+    assert.equal(passed.passed, false)
+    note('The next day, BTC back at 60,000.')
+    setBtc(60_000)
+    clock.now += 86_400_000
+    live = await order(deps(), { ...BTC, notional: 5000, leverage: 2 })
+    show('order --market BTC --side long --notional 5000 --leverage 2', live)
+    assert.equal(live.position.status, 'open')
+  }
+  assert.equal(passed?.passed, true)
+  assert.equal(passed?.accountStatus, 'funded')
+  setBtc(60_000)
+  clock.now += 86_400_000
 
   const second = await order(deps(), { ...BTC, notional: 5000, leverage: 2 })
   show('order --market BTC --side long --notional 5000 --leverage 2', second)
   assert.equal(second.position.status, 'open')
-  note('BTC rises to 71,500 and a minute passes.')
-  setBtc(71_500)
+  note('BTC rises to 66,000 and a minute passes.')
+  setBtc(66_000)
   clock.now += 61_000
   const profit = await close(deps(), { position: second.position.id })
   show(`close --position ${second.position.id}`, profit)
@@ -410,7 +431,7 @@ try {
   assert.ok((funded.accounts[0].withdrawable?.amountUsd ?? 0) > 400)
 
   const receiveUsd = funded.accounts[0].withdrawable?.youReceiveUsd ?? 0
-  note('A payout takes the whole profit at once — no --amount any more. The account’s first payout always meets a person, so MonFunded releases it before it can pay or be claimed; the operator’s payouts are paused meanwhile (as when its wallet runs out of MON), so this one is claimed.')
+  note('A payout takes the whole profit at once. This one waits for a person at MonFunded, who releases it before it can pay or be claimed; the operator’s payouts are paused meanwhile (as when its wallet runs out of MON), so this one is claimed.')
   const w1 = await withdraw(deps(), { token: 'AUSD' })
   show('withdraw --token ausd --yes', w1)
   assert.ok(w1.done && 'withdrawal' in w1)

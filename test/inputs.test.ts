@@ -4,21 +4,18 @@ import { test } from 'node:test'
 import { categoryOf } from '../src/lib/constants.ts'
 import { PluginError } from '../src/lib/errors.ts'
 import { symbolOf } from '../src/lib/format.ts'
-import { apiBase, apiTarget, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseRisk, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
+import { apiBase, apiTarget, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
 
 const refused = (run: () => unknown, code = 'INVALID_INPUT') => assert.throws(run, (e) => e instanceof PluginError && e.code === code)
 
-test('sizes: 5k to 400k, or the whole number', () => {
+test('sizes: a number of thousands (10k), or the whole number', () => {
   assert.equal(parseSize('5k'), 5000)
   assert.equal(parseSize('400K'), 400_000)
   assert.equal(parseSize(' 25000 '), 25_000)
   for (const bad of ['', '5', '5.5k', '$5k', '5,000', '-5k', '2000k', 'abc', '5 k', '5kk']) refused(() => parseSize(bad))
 })
 
-test('risk, coin and side: the listed words only (any case)', () => {
-  assert.equal(parseRisk('TIGHT'), 'tight')
-  assert.equal(parseRisk('medium'), 'medium')
-  refused(() => parseRisk('loose'))
+test('coin and side: the listed words only (any case)', () => {
   assert.equal(parsePay('usdc'), 'USDC')
   assert.equal(parsePay('Mon'), 'MON')
   refused(() => parsePay('eth'))
@@ -111,5 +108,5 @@ test('valid(): true, or the refusal in words for mm’s input prompts', () => {
     valid(() => parseSize('5k')),
     true,
   )
-  assert.match(String(valid(() => parseSize('x'))), /^--size: "x" is not an account size\. Use 5k/)
+  assert.match(String(valid(() => parseSize('x'))), /^--size: "x" is not an account size\. Use 10k/)
 })

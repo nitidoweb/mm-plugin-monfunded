@@ -2,7 +2,7 @@
 // (INVALID_INPUT). Nothing is guessed or rounded on the user's behalf.
 import { API_URL_ENV, DEFAULT_API, DEV_ENV } from './constants.ts'
 import { PluginError } from './errors.ts'
-import type { PayoutToken, PayWith, Risk, Side } from './types.ts'
+import type { PayoutToken, PayWith, Side } from './types.ts'
 
 const invalid = (flag: string, message: string, hint: string) => new PluginError('INVALID_INPUT', `--${flag}: ${message}`, hint)
 
@@ -16,18 +16,12 @@ export function valid(parse: () => unknown): true | string {
   }
 }
 
-// An account size in dollars: 5k, 10k, 25k, 50k, 100k, 200k, 400k, or the whole number (5000).
+// An account size in dollars: 10k, 25k, 50k, 100k, 200k, or the whole number (10000).
 export function parseSize(raw: string): number {
   const m = /^(\d{1,7})(k?)$/i.exec(raw.trim())
   const size = m ? Number(m[1]) * (m[2] ? 1000 : 1) : NaN
-  if (!(size >= 1000 && size <= 1_000_000)) throw invalid('size', `"${raw}" is not an account size.`, 'Use 5k, 10k, 25k, 50k, 100k, 200k or 400k.')
+  if (!(size >= 1000 && size <= 1_000_000)) throw invalid('size', `"${raw}" is not an account size.`, 'Use 10k, 25k, 50k, 100k or 200k.')
   return size
-}
-
-export function parseRisk(raw: string): Risk {
-  const risk = raw.trim().toLowerCase()
-  if (risk !== 'tight' && risk !== 'medium') throw invalid('risk', `"${raw}" is not a risk level.`, 'Use tight (cheaper, 3 % limits) or medium (more room, 4 % daily / 7 % total).')
-  return risk
 }
 
 export function parsePay(raw: string): PayWith {

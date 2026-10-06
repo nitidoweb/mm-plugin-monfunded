@@ -2,7 +2,7 @@
 // sign-in that sets an httpOnly session cookie, which the plugin keeps and sends back itself. The
 // cookie never leaves this module except into the session store.
 import { isAddress } from 'viem'
-import { AUSD, DEV_ENV, MON_MARKET, MONFUNDED_CONTRACT, REQUEST_TIMEOUT_MS, USDC, USER_AGENT } from './constants.ts'
+import { AUSD, MON_MARKET, MONFUNDED_CONTRACT, REQUEST_TIMEOUT_MS, USDC, USER_AGENT } from './constants.ts'
 import { apiError, PluginError, type ErrorExtras } from './errors.ts'
 import type { Address, Challenge, ChallengeConfig, ClaimProof, Hex, Me, PayoutToken, Position, Prices, Side, Withdrawal } from './types.ts'
 
@@ -11,9 +11,11 @@ export type Fetch = (url: string, init: RequestInit) => Promise<Response>
 // `dev`: a developer's server (MONFUNDED_DEV=1 with MONFUNDED_API_URL), whose contract and MON book
 // are trusted as they are. Otherwise the config must name the pinned ones: `pinnedContract`
 // (MONFUNDED_CONTRACT unless a test says otherwise) and Kuru's MON_USDC book.
-export type ApiOptions = { dev?: boolean; pinnedContract?: Address | null }
+export type ApiOptions = { dev?: boolean; pinnedContract?: Address }
 
-const COOKIE = 'monfunded_session'
+// The server's session cookie (server/challenge.mjs). The __Host- prefix is the browser's rule;
+// here it is only the name the server reads back.
+const COOKIE = '__Host-monfunded_session'
 // The API's answers are small; anything bigger is not MonFunded.
 const MAX_BODY = 2_000_000
 
@@ -24,8 +26,8 @@ const untrusted = (why: string) => new PluginError('BAD_CONFIG', `The MonFunded 
 
 // The config drives payments, so its money fields are checked before anything is signed: the two
 // coins MonFunded uses, plans with a contract index and a positive fee, and, unless `dev`, the
-// pinned contract (or none yet) and the pinned MON book (or none). A developer's server may name
-// any well-formed contract and book.
+// pinned contract (or none, while entries are closed) and the pinned MON book (or none). A
+// developer's server may name any well-formed contract and book.
 function checkConfig(c: ChallengeConfig, { dev = false, pinnedContract = MONFUNDED_CONTRACT }: ApiOptions): ChallengeConfig {
   const tiersOk = Array.isArray(c?.tiers) && c.tiers.every((t) => typeof t.id === 'string' && Number.isInteger(t.index) && t.index >= 0 && t.index <= 255 && t.feeUsd > 0 && t.size > 0 && typeof t.rules === 'object')
   if (!tiersOk) throw untrusted('malformed plans')
@@ -34,12 +36,6 @@ function checkConfig(c: ChallengeConfig, { dev = false, pinnedContract = MONFUND
   if (dev) return c
   if (c.monMarket !== null && !sameAddress(c.monMarket, MON_MARKET)) throw untrusted(`a MON book, ${c.monMarket}, other than Kuru’s MON_USDC book ${MON_MARKET}`)
   if (c.contract === null) return c
-  if (pinnedContract === null)
-    throw new PluginError(
-      'PLUGIN_OUTDATED',
-      `The MonFunded API names a contract (${c.contract}), but this version of the plugin doesn’t know MonFunded’s contract yet, so it pays none and reads none.`,
-      `Nothing was signed. Update the plugin (a newer mm-plugin-monfunded pins the deployed contract), or set ${DEV_ENV}=1 with MONFUNDED_API_URL only for a test server.`,
-    )
   if (!sameAddress(c.contract, pinnedContract)) throw untrusted(`a contract, ${c.contract}, other than MonFunded’s ${pinnedContract}`)
   return c
 }

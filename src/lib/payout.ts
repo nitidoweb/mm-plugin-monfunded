@@ -1,8 +1,8 @@
 // `mm monfunded withdraw` and `claim`: taking profit off a funded account, and collecting a payout
 // from the contract yourself. A withdrawal pays the trader's share (80 %) in USDC or AUSD from the
 // contract's reserve of that coin, always to the wallet that owns the account; MonFunded's
-// operator sends it, or the trader claims it with the operator's signature. A wallet the screening
-// flags is held for an admin's review first.
+// operator sends it, or the trader claims it with the operator's signature. MonFunded checks every
+// payout first, and some wait for a person's decision.
 import { AUSD, PAYOUT_WAIT_MS, POLL_MS, USDC } from './constants.ts'
 import { claimCall, usd6 } from './chain.ts'
 import { CHAIN_LABEL, pickAccount, signIn, type Deps, type Plan } from './context.ts'
@@ -51,12 +51,12 @@ export async function withdraw(d: Deps, input: WithdrawInput) {
     to: `your wallet ${d.wallet}: payouts only ever go to the wallet that owns the account`,
     contract: config.contract,
     chain: CHAIN_LABEL,
-    steps: [`MonFunded records the payout, screens the wallet, and its operator sends ${coin(paid, input.token)} with payout() on the contract.`],
+    steps: [`MonFunded records the payout, checks it, and its operator sends ${coin(paid, input.token)} with payout() on the contract.`],
     notes: [
       'Your wallet signs nothing and pays no gas for this.',
       'A payout is always the whole profit: there is no amount to choose.',
       'The account pauses until this payout is released or declined; released, it trades again from its starting balance.',
-      'A wallet the screening flags is held for an admin’s review before anything is paid.',
+      'MonFunded checks every payout before it pays; some wait for a person’s decision, which can take a while.',
       'If the payout has not arrived, collect it yourself: `mm monfunded claim --withdrawal <id>`.',
       'A payout can’t be undone.',
     ],
@@ -80,10 +80,12 @@ export async function claim(d: Deps, input: ClaimInput) {
     const view = withdrawalView(w)
     return { done: true as const, alreadyPaid: true, withdrawal: view, summary: [view.summary] }
   }
-  if (w.status === 'review') throw new PluginError('UNDER_REVIEW', 'This payout is held for review: MonFunded screens payout wallets, and an admin decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.')
+  if (w.status === 'review') throw new PluginError('UNDER_REVIEW', 'This payout is held for review: MonFunded checks every payout, and a person decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.')
+  // The contract counts a claim against the same daily limit as the operator's payout, so a claim would revert too.
+  if (w.status === 'queued') throw new PluginError('PAYOUT_QUEUED', 'This payout is released and waiting its turn: the contract’s daily payout limit is reached, so a claim would be refused as well.', 'Nothing to do but wait: MonFunded sends it by itself once there is room; `mm monfunded status` shows when it is paid.')
   if (w.status === 'rejected') throw new PluginError('WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) if you think this is a mistake.')
   const contract = config.contract
-  if (!contract) throw new PluginError('NO_CONTRACT', 'MonFunded has no contract on Monad yet, so there is nothing to claim from.', 'Try again once `mm monfunded status` says entries are open.')
+  if (!contract) throw new PluginError('NO_CONTRACT', 'MonFunded names no contract right now, so there is nothing to claim from.', 'Try again once `mm monfunded status` says entries are open.')
   if (c.trader.toLowerCase() !== d.wallet.toLowerCase()) throw new PluginError('WRONG_WALLET', `Withdrawal ${w.id} belongs to ${c.trader}; the contract pays only that wallet.`, 'Switch to it with `mm wallet select` and sign in again.')
   const proof = await d.api.claimProof(c.id, w.id)
   if (proof.token !== w.token) throw new PluginError('BAD_PROOF', 'The claim proof names a different coin from the withdrawal.', 'Nothing was signed. Try again in a minute.')

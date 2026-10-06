@@ -1,20 +1,20 @@
 // `mm monfunded buy`: pays an assessment's fee to the MonFunded contract in USDC, AUSD or MON through
 // MetaMask, then registers the mined entry with MonFunded. Everything that could waste the fee is
 // checked before anything is signed: the session is this wallet's (the entry must be registered
-// to the wallet that paid), no assessment is running (one at a time), the contract is deployed,
-// charges exactly the listed fee and takes the two known coins, and the wallet holds the coin and
-// gas; and right before each transaction, the server and the contract must still price the plan
+// to the wallet that paid), the wallet is under MonFunded's limits (five assessments at once,
+// $400,000 of funded size), entries are open, the contract charges exactly the listed fee and takes
+// the two known coins, and the wallet holds the coin and gas; and right before each transaction, the server and the contract must still price the plan
 // as confirmed. `--entry-tx` registers an entry already paid, without paying again.
-import { AUSD, ENTRY_ATTEMPTS, KURU_ROUTER, MON_DEADLINE_S, MON_RESERVE_WEI, USDC } from './constants.ts'
+import { AUSD, ENTRY_ATTEMPTS, KURU_ROUTER, MAX_ASSESSMENTS, MAX_FUNDED_USD, MON_DEADLINE_S, MON_RESERVE_WEI, USDC } from './constants.ts'
 import { approveCall, enterCall, enterWithMonCall, usd6, type Call } from './chain.ts'
 import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
 import { coin, mon, pct, planName, txUrl, usd } from './format.ts'
 import { floorFromSwap, quoteMonFee, unconfirmed } from './kuru.ts'
-import type { Address, Hex, PayWith, Risk, Tier } from './types.ts'
+import type { Address, Hex, PayWith, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
-export type BuyInput = { size: number; risk: Risk; pay: PayWith; entryTx?: Hex }
+export type BuyInput = { size: number; pay: PayWith; entryTx?: Hex }
 
 const sizeFlag = (size: number) => (size % 1000 === 0 ? `${size / 1000}k` : String(size))
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
@@ -43,16 +43,21 @@ export async function buy(d: Deps, input: BuyInput) {
   signIn(d)
   const config = await d.api.config()
   const contract = config.contract
-  if (!contract) throw new PluginError('ENTRIES_CLOSED', 'Entries open once the MonFunded contract is deployed on Monad. It isn’t yet, so there is nothing to pay.', 'Run `mm monfunded status` later: it says when entries are open.')
-  const tier = config.tiers.find((t) => t.risk === input.risk && t.size === input.size && t.enabled !== false)
+  if (!contract) throw new PluginError('ENTRIES_CLOSED', 'MonFunded is taking no entries right now (it names no contract to pay), so nothing was paid.', 'Run `mm monfunded status` later: it says when entries are open.')
+  const tier = config.tiers.find((t) => t.size === input.size && t.enabled !== false)
   if (!tier) {
-    const sizes = config.tiers.filter((t) => t.risk === input.risk && t.enabled !== false).map((t) => sizeFlag(t.size))
-    throw new PluginError('UNKNOWN_PLAN', `MonFunded sells no ${input.risk} plan of $${input.size.toLocaleString('en-US')}.`, sizes.length ? `On sale at ${input.risk} risk: --size ${sizes.join(', ')}.` : 'Run `mm monfunded status` to see the plans on sale.')
+    const sizes = config.tiers.filter((t) => t.enabled !== false).map((t) => sizeFlag(t.size))
+    throw new PluginError('UNKNOWN_PLAN', `MonFunded sells no plan of $${input.size.toLocaleString('en-US')}.`, sizes.length ? `On sale: --size ${sizes.join(', ')}.` : 'Run `mm monfunded status` to see the plans on sale.')
   }
   const me = await d.api.me()
-  const running = me.active.find((c) => c.status === 'assessment')
-  if (running) throw new PluginError('ALREADY_ACTIVE', `This wallet already has an assessment running (${running.id}), and MonFunded allows one at a time. Nothing was paid.`, 'Pass or fail it first; `mm monfunded status` shows its progress.')
-  const again = `mm monfunded buy --size ${sizeFlag(tier.size)} --risk ${tier.risk}`
+  // The server's two limits per wallet (a practice account counts toward neither). It checks them
+  // when the entry is registered, after the fee is paid, so they are checked here first.
+  const paid = me.active.filter((c) => !c.demo)
+  const running = paid.filter((c) => c.status === 'assessment').length
+  if (running >= MAX_ASSESSMENTS) throw new PluginError('TOO_MANY_ASSESSMENTS', `This wallet already has ${running} assessments running, and MonFunded allows ${MAX_ASSESSMENTS} at a time. Nothing was paid.`, 'Pass or fail one first; `mm monfunded status` shows their progress.')
+  const held = paid.filter((c) => c.status === 'funded').reduce((sum, c) => sum + c.rules.size, 0)
+  if (held + tier.size > MAX_FUNDED_USD) throw new PluginError('FUNDED_CAP', `This wallet holds ${usd(held)} of funded accounts, and one wallet may hold ${usd(MAX_FUNDED_USD)} at most: a ${usd(tier.size)} plan would pass it. Nothing was paid.`, 'Pick a smaller --size; `mm monfunded status` shows the funded accounts.')
+  const again = `mm monfunded buy --size ${sizeFlag(tier.size)} --pay ${input.pay.toLowerCase()}`
   if (input.entryTx) return register(d, tier, input.entryTx, again)
 
   // The contract must take the coins MonFunded names and charge exactly the plan's listed fee
@@ -113,6 +118,7 @@ export async function buy(d: Deps, input: BuyInput) {
     steps: steps.map((s) => s.step),
     notes: [
       `Rules: close positions at ${pct(tier.rules.profitTargetPct)} profit to pass; losing ${pct(tier.rules.dailyLossPct)} in a day or ${pct(tier.rules.maxDrawdownPct)} in total fails the account.`,
+      ...(tier.rules.consistencyPct !== undefined ? [`Consistency: no single day may be worth more than ${pct(tier.rules.consistencyPct)} of the profit; until then the pass waits.`] : []),
       'The fee is not refundable once the account is active.',
     ],
   }

@@ -329,9 +329,10 @@ test('signed in, status reports each account’s rule meters, positions and with
     payoutPending: true,
   })
   const stopped: Position = { id: 'p000000000002', marketId: 'perpl:BTC', side: 'long', status: 'closed', notional: 1000, leverage: 2, margin: 500, requestedAt: T0 - 90_000, entryPrice: 59_000, openedAt: T0 - 80_000, exitPrice: 58_000, closedAt: T0 - 70_000, pnl: -16.95, closedBy: 'stopOut' }
+  const odd: Position = { ...stopped, id: 'p000000000003', closedBy: 'constructor' as never }
   const { api, calls } = fakeApi({
     'GET /config': () => config(),
-    'GET /me': () => ({ address: wallet.address, active: [account({ positions: [open, stopped], progress: progress({ profit: 450, dailyPnl: 16.95, consistency: { bestDay: 300, profit: 450, sharePct: 66.67, limitPct: 30, ok: false, need: 1000 }, margin: { used: 500, free: 4516.95, level: 1003.39, call: false } }) }), funded], past: [account({ id: `0x${'d4'.repeat(32)}`, status: 'failed', reason: 'dailyLoss', endedAt: T0 - 1000 })] }),
+    'GET /me': () => ({ address: wallet.address, active: [account({ positions: [open, stopped, odd], progress: progress({ profit: 450, dailyPnl: 16.95, consistency: { bestDay: 300, profit: 450, sharePct: 66.67, limitPct: 30, ok: false, need: 1000 }, margin: { used: 500, free: 4516.95, level: 1003.39, call: false } }) }), funded], past: [account({ id: `0x${'d4'.repeat(32)}`, status: 'failed', reason: 'dailyLoss', endedAt: T0 - 1000 })] }),
     'GET /prices': () => PRICES,
   })
   const r = await status(makeDeps(api).d)
@@ -345,6 +346,7 @@ test('signed in, status reports each account’s rule meters, positions and with
   assert.match(a.summary.join('\n'), /the best day \(\$300\.00\) is 66\.67 % of this phase’s profit; the limit is 30 %, so the pass waits until the profit reaches \$1,000\.00\./)
   assert.equal(a.marginLevelPct, 1003.39)
   assert.match(a.positions[1].summary, /closed by the stop-out: the account’s margin level fell to 50 %/)
+  assert.match(a.positions[2].summary, /closed at 58000: P&L -\$16\.95\.$/, 'a closer this plugin has no words for adds none')
   assert.deepEqual(a.dailyLoss, { roomUsd: 166.95, limitUsd: 150, todayPnlUsd: 16.95 })
   assert.deepEqual(a.drawdown, { roomUsd: 150, floorUsd: 4850 })
   assert.equal(a.positions[0].pnlUsd, 16.95)

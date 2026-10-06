@@ -67,6 +67,8 @@ test('claim explains a payout held for review, declined or waiting under the dai
     [{ ...unpaid, status: 'review' }, 'UNDER_REVIEW'],
     [{ ...unpaid, status: 'rejected' }, 'WITHDRAWAL_REJECTED'],
     [{ ...unpaid, status: 'queued' }, 'PAYOUT_QUEUED'],
+    // A state a newer server names and this plugin doesn't know is not claimed: it waits, like a review.
+    [{ ...unpaid, status: 'held2' as never }, 'UNDER_REVIEW'],
   ] as const) {
     const { api, calls } = fakeApi({ 'GET /me': me(funded({ withdrawals: [w] })), 'GET /config': () => config() })
     await assert.rejects(claim(makeDeps(api, { yes: true }).d, { withdrawal: WID }), code(expected))

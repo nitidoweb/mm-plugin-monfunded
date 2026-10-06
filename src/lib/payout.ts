@@ -80,10 +80,11 @@ export async function claim(d: Deps, input: ClaimInput) {
     const view = withdrawalView(w)
     return { done: true as const, alreadyPaid: true, withdrawal: view, summary: [view.summary] }
   }
-  if (w.status === 'review') throw new PluginError('UNDER_REVIEW', 'This payout is held for review: MonFunded checks every payout, and a person decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.')
+  if (w.status === 'rejected') throw new PluginError('WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) if you think this is a mistake.')
   // The contract counts a claim against the same daily limit as the operator's payout, so a claim would revert too.
   if (w.status === 'queued') throw new PluginError('PAYOUT_QUEUED', 'This payout is released and waiting its turn: the contract’s daily payout limit is reached, so a claim would be refused today as well.', 'Nothing to do but wait: MonFunded sends it by itself once there is room; `mm monfunded status` shows when it is paid.')
-  if (w.status === 'rejected') throw new PluginError('WITHDRAWAL_REJECTED', 'An admin declined this withdrawal after review: it will never be paid.', 'Open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) if you think this is a mistake.')
+  // Held for review, or in a state this version has no name for: neither is claimed.
+  if (w.status !== undefined) throw new PluginError('UNDER_REVIEW', 'This payout is held for review: MonFunded checks every payout, and a person decides on this one before it can be paid or claimed.', 'Nothing to do but wait; `mm monfunded status` shows when it is approved.')
   const contract = config.contract
   if (!contract) throw new PluginError('NO_CONTRACT', 'MonFunded names no contract right now, so there is nothing to claim from.', 'Try again once `mm monfunded status` says entries are open.')
   if (c.trader.toLowerCase() !== d.wallet.toLowerCase()) throw new PluginError('WRONG_WALLET', `Withdrawal ${w.id} belongs to ${c.trader}; the contract pays only that wallet.`, 'Switch to it with `mm wallet select` and sign in again.')

@@ -48,36 +48,32 @@ function checkProof(p: ClaimProof): ClaimProof {
 }
 
 // Accounts are read strictly, here where they come in: their words end up in refusals and summaries
-// a person or an AI agent reads, so an id, a market, a side, a status or a coin must be one — never
-// a sentence. Words that only describe (who closed a position, why an account failed, a payout's
-// transaction) are dropped when they are not the known ones, so a value a newer server adds reads
-// as absent rather than breaking the plugin.
+// a person or an AI agent reads, so an id, a market, a plan or a status must be a single short word
+// (never a sentence), a side long or short, a coin USDC or AUSD. A status is not held to the ones
+// this version knows: the server names new ones (production sends 'ended' for a retired practice
+// account), and a word the plugin doesn't know is still only a word. What only describes (who
+// closed a position, why an account ended, a payout's transaction) is dropped when it is not one.
 const unreadable = (what: string) => new PluginError('BAD_RESPONSE', `The MonFunded API sent ${what} the plugin can’t read.`, 'Nothing was signed. Try again in a moment; if it keeps happening, check for a newer version of the plugin.')
 const isWord = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9:_.-]{1,40}$/.test(v)
 const PLAN_NAME = /^[A-Za-z0-9 $,.]{1,24}$/
-const POSITION_STATUS: ReadonlySet<unknown> = new Set(['pending', 'open', 'closing', 'closed', 'cancelled'])
-const CLOSED_BY: ReadonlySet<unknown> = new Set(['trader', 'liquidation', 'stopOut', 'end', 'guard', 'sl', 'tp'])
-const ACCOUNT_STATUS: ReadonlySet<unknown> = new Set(['assessment', 'funded', 'failed'])
-const FAIL_REASON: ReadonlySet<unknown> = new Set(['dailyLoss', 'maxDrawdown', 'conduct'])
-const WITHDRAWAL_STATUS: ReadonlySet<unknown> = new Set([undefined, 'review', 'rejected', 'queued'])
 
 function checkPosition(p: Position): Position {
-  if (!p || !isWord(p.id) || !isWord(p.marketId) || (p.side !== 'long' && p.side !== 'short') || !POSITION_STATUS.has(p.status)) throw unreadable('a position')
+  if (!p || !isWord(p.id) || !isWord(p.marketId) || (p.side !== 'long' && p.side !== 'short') || !isWord(p.status)) throw unreadable('a position')
   const { closedBy, ...rest } = p
-  return { ...rest, ...(CLOSED_BY.has(closedBy) && { closedBy }) }
+  return { ...rest, ...(isWord(closedBy) && { closedBy }) }
 }
 
 function checkWithdrawal(w: Withdrawal): Withdrawal {
-  if (!w || !isHexOf(w.id, 32) || (w.token !== 'USDC' && w.token !== 'AUSD') || !WITHDRAWAL_STATUS.has(w.status)) throw unreadable('a withdrawal')
+  if (!w || !isHexOf(w.id, 32) || (w.token !== 'USDC' && w.token !== 'AUSD') || !(w.status === undefined || isWord(w.status))) throw unreadable('a withdrawal')
   const { tx, ...rest } = w
   return { ...rest, ...(isHexOf(tx, 32) && { tx }) }
 }
 
 function checkChallenge(c: Challenge): Challenge {
-  if (!c || !isHexOf(c.id, 32) || typeof c.trader !== 'string' || !isAddress(c.trader) || !isWord(c.tier) || !ACCOUNT_STATUS.has(c.status) || !Array.isArray(c.positions) || !Array.isArray(c.withdrawals) || typeof c.progress !== 'object' || c.progress === null || typeof c.rules !== 'object' || c.rules === null)
+  if (!c || !isHexOf(c.id, 32) || typeof c.trader !== 'string' || !isAddress(c.trader) || !isWord(c.tier) || !isWord(c.status) || !Array.isArray(c.positions) || !Array.isArray(c.withdrawals) || typeof c.progress !== 'object' || c.progress === null || typeof c.rules !== 'object' || c.rules === null)
     throw unreadable('an account')
   const { reason, ...rest } = c
-  return { ...rest, ...(FAIL_REASON.has(reason) && { reason }), positions: c.positions.map(checkPosition), withdrawals: c.withdrawals.map(checkWithdrawal) }
+  return { ...rest, ...(isWord(reason) && { reason }), positions: c.positions.map(checkPosition), withdrawals: c.withdrawals.map(checkWithdrawal) }
 }
 
 function checkMe(m: Me): Me {

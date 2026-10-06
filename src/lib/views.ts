@@ -92,7 +92,8 @@ export type WithdrawalView = {
 }
 
 export function withdrawalView(w: Withdrawal): WithdrawalView {
-  const state: WithdrawalState = w.paidAt !== undefined ? 'paid' : (w.status ?? 'unpaid')
+  // A state this version has no name for is one that isn't paid and can't be claimed: it reads as held.
+  const state: WithdrawalState = w.paidAt !== undefined ? 'paid' : w.status === undefined ? 'unpaid' : w.status === 'rejected' || w.status === 'queued' ? w.status : 'review'
   const head = `${w.id}: ${usd(w.amountUsd)} off the balance, ${coin(w.paidUsd, w.token)} to you`
   const summary =
     state === 'paid'
@@ -155,7 +156,7 @@ export function accountView(c: Challenge, tiers: Tier[], prices: Prices, now: nu
   const positions = c.positions.map((x) => positionView(x, prices, now))
   const withdrawals = c.withdrawals.map(withdrawalView)
   const kind = c.status === 'assessment' ? 'assessment' : c.status === 'funded' ? 'funded account' : 'account'
-  const summary = [`${plan} ${kind} ${c.id}${c.status === 'failed' ? `, failed on ${c.reason ? FAIL_REASON[c.reason] : 'a rule'}` : ''}: equity ${usd(p.equity)}, balance ${usd(p.balance)}.`]
+  const summary = [`${plan} ${kind} ${c.id}${c.status === 'failed' ? `, failed on ${c.reason && Object.hasOwn(FAIL_REASON, c.reason) ? FAIL_REASON[c.reason] : 'a rule'}` : ''}: equity ${usd(p.equity)}, balance ${usd(p.balance)}.`]
   if (c.status === 'assessment') summary.push(`Profit target: ${usd(p.profit)} of ${usd(p.target)} (${pct(p.target > 0 ? (p.profit / p.target) * 100 : 0)}); it counts once no position is open.`)
   const k = p.consistency
   const consistency = k && k.bestDay > 0 ? { bestDayUsd: k.bestDay, sharePct: k.sharePct, limitPct: k.limitPct, ok: k.ok, profitNeededUsd: k.need } : undefined

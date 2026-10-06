@@ -1,9 +1,14 @@
 {
   "name": "mm-plugin-monfunded",
   "version": "0.2.0",
-  "private": true,
   "description": "MonFunded for MetaMask Agent Wallet: an AI agent buys a MonFunded assessment, trades it and claims its payouts with the mm CLI, on Monad.",
   "homepage": "https://monfunded.com/agents/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nitidoweb/monfunded.git",
+    "directory": "agent"
+  },
+  "bugs": "https://github.com/nitidoweb/monfunded/issues",
   "type": "module",
   "keywords": [
     "oclif-plugin",

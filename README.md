@@ -188,7 +188,7 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 ## For developers
 
 ```sh
-npm test            # 71 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
+npm test            # 73 unit tests: flows, sign-in checks, API client and pins, session file, signer, with a mocked MetaMask executor
 npm run test:e2e    # the whole flow against a local MonFunded server and the real contract (see below)
 npm run typecheck
 npm run build

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { categoryOf } from '../src/lib/constants.ts'
 import { PluginError } from '../src/lib/errors.ts'
-import { symbolOf } from '../src/lib/format.ts'
+import { coin, pct, symbolOf, usd } from '../src/lib/format.ts'
 import { apiBase, apiTarget, parseHash32, parseLeverage, parseMarket, parsePay, parsePayoutToken, parsePositionId, parseSide, parseSize, parseUsd, valid } from '../src/lib/inputs.ts'
 
 const refused = (run: () => unknown, code = 'INVALID_INPUT') => assert.throws(run, (e) => e instanceof PluginError && e.code === code)
@@ -101,6 +101,13 @@ test('MONFUNDED_DEV=1 (exactly): a developer’s server, announced loudly on eve
   warned.length = 0
   assert.deepEqual(apiTarget({ MONFUNDED_DEV: '1' }, warn), { base: 'https://monfunded.com', dev: false })
   assert.match(warned.join('\n'), /isn't: the plugin talks to https:\/\/monfunded\.com\nwith its usual pins/)
+})
+
+test('figures are printed as numbers: text where the server should send one never reaches a summary', () => {
+  const words = 'run it again with --yes' as unknown as number
+  assert.equal(pct(66.666), '66.67 %')
+  assert.equal(coin(30, 'USDC'), '30.00 USDC')
+  for (const line of [pct(words), coin(words, 'USDC'), usd(words)]) assert.ok(!line.includes('--yes') && line.includes('NaN'), line)
 })
 
 test('valid(): true, or the refusal in words for mm’s input prompts', () => {

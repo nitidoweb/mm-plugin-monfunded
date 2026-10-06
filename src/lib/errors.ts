@@ -63,12 +63,16 @@ const API_ERRORS: Record<string, [code: string, message: string, hint: string]> 
 export type ErrorExtras = { retryAt?: unknown; limit?: unknown; paidUsd?: unknown; feeUsd?: unknown; maxAgeHours?: unknown; max?: unknown; held?: unknown; account?: unknown; until?: unknown }
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+// A time in milliseconds as a date, when it is one a Date can hold.
+const when = (v: unknown) => {
+  const ms = num(v)
+  return ms !== undefined && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : undefined
+}
 const dollars = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 // The details an error's extras add to its message, each only when the server sent it well formed.
 function details(code: string, extra: ErrorExtras): string {
-  const retryAt = num(extra.retryAt)
-  const at = retryAt !== undefined ? new Date(retryAt).toISOString() : undefined
+  const at = when(extra.retryAt)
   if (code === 'holdTime' && at) return ` This one can close from ${at}.`
   if (code === 'orderLimit') {
     const limit = num(extra.limit)
@@ -89,8 +93,8 @@ function details(code: string, extra: ErrorExtras): string {
   if (code === 'hedging') return extra.held === 'long' || extra.held === 'short' ? ` It is ${extra.held} there.` : ''
   if (code === 'crossHedge') return typeof extra.account === 'string' && /^0x[0-9a-f]{1,64}$/i.test(extra.account) ? ` The other account is ${extra.account}.` : ''
   if (code === 'newsPause') {
-    const until = num(extra.until)
-    return until !== undefined ? ` Orders are taken again from ${new Date(until).toISOString()}.` : ''
+    const until = when(extra.until)
+    return until ? ` Orders are taken again from ${until}.` : ''
   }
   if (code === 'entryExpired') {
     const hours = num(extra.maxAgeHours)

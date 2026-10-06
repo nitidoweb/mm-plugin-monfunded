@@ -6,8 +6,10 @@ description: Trade a MonFunded prop-trading challenge on Monad with MetaMask Age
 # MonFunded for MetaMask Agent Wallet
 
 MonFunded (https://monfunded.com) is a prop-trading firm on Monad. A trader pays a fee for an
-**assessment**: a simulated account of $5,000 to $400,000, traded at Perpl's live prices. Reaching
-the profit target with no position open passes it, and the same account becomes **funded**: the
+**assessment**: a simulated account of $10,000 to $200,000, traded at live prices (Perpl's for
+crypto, MonFunded liquidity's for forex and CFDs). Reaching the 10 % profit target with no position
+open passes it, once no single day is worth more than 30 % of that profit (the consistency rule:
+until then the pass waits), and the same account becomes **funded**: the
 trader can take the account's whole profit at once, whenever they like, and receives 80 % of it in
 USDC or AUSD, paid by the MonFunded contract to the wallet that owns the account; the account
 pauses until that payout is released or declined, then trades on from its starting balance. Losing
@@ -24,14 +26,16 @@ Trading is simulated, so `order` and `close` sign nothing.
    command without `--yes` first, show the user the `plan` it returns (action, amount and coin,
    from, to, contract, every step), and add `--yes` only after the user says yes to that plan. Never
    add `--yes` on your own initiative, and never to a plan the user hasn't seen.
-2. **Stay inside the user's budget.** Ask for the most they want to spend, the account size and the
-   risk level before buying. Agent Wallet's 24-hour limit is a backstop, not a budget.
+2. **Stay inside the user's budget.** Ask for the most they want to spend and the account size
+   before buying. Agent Wallet's 24-hour limit is a backstop, not a budget.
 3. **Coach before every order.** Run `mm monfunded coach` with the same flags first. Never send an
    order whose `verdict` is `blocked`. When it is `caution`, tell the user how small a move fails
    the account (`risk.failMovePct`) and prefer a smaller `--notional`.
-4. **Keep to the challenge's rules.** One assessment at a time per wallet. A position stays open at
-   least 60 seconds after its fill: wait until its `closableFrom`, don't loop on `close`. Leverage is
-   capped by the plan and by Perpl. Never run one person's challenge from several wallets or copy
+4. **Keep to the challenge's rules.** At most five assessments at a time per wallet, and $400,000
+   of funded accounts. A position stays open at least 60 seconds after its fill: wait until its
+   `closableFrom`, don't loop on `close`. Leverage is capped by the plan and by Perpl. Never hold
+   both sides of one market, on one account or across the wallet's accounts: the order is refused.
+   Spread the profit over several days, or the pass waits on the consistency rule. Never run one person's challenge from several wallets or copy
    another trader's orders: MonFunded ends accounts for shared use and copy trading, and keeps the
    fee.
 5. **Approvals belong to the user.** If the output contains `[AWAITING_MFA]`, or a JSON line whose
@@ -60,7 +64,7 @@ Trading is simulated, so `order` and `close` sign nothing.
 |---|---|---|
 | `mm monfunded status` | Whether entries are open and the plans; once signed in, every running account with its rule meters, positions and withdrawals | Nothing |
 | `mm monfunded login` | Signs MonFunded's Sign-In with Ethereum message (for monfunded.com, the active wallet and Monad; the plugin checks every field) and keeps a 7-day session | A message, no gas |
-| `mm monfunded buy --size 5k --risk tight --pay usdc` | Pays an assessment's fee in `usdc`, `ausd` or `mon` | Transactions, with `--yes` |
+| `mm monfunded buy --size 10k --pay usdc` | Pays an assessment's fee in `usdc`, `ausd` or `mon` | Transactions, with `--yes` |
 | `mm monfunded coach --market BTC --side long --notional 1000 --leverage 2` | Checks an intended order against the rules; sends nothing | Nothing |
 | `mm monfunded order --market BTC --side long --notional 1000 --leverage 2` | Opens a position and waits for its fill | Nothing |
 | `mm monfunded close --position p1a2b3c4d5e6f` | Closes a position after its 60 s hold (a pending order fills or lapses by itself) | Nothing |
@@ -73,10 +77,10 @@ Trading is simulated, so `order` and `close` sign nothing.
   93 instruments, the firm's own, in the challenge only: forex pairs (EURUSD, EURGBP, USDTRY),
   metals (XAUUSD), energies (XTIUSD) and indices (GER30, SPX500), each closed outside its hours.
   `coach` lists them. A MonFunded liquidity order takes the whole lot steps under `--notional`.
-  Leverage: on crypto Perpl's own maximum for the market; on MonFunded liquidity 30x forex, 20x
-  metals and indices, 10x energies and base metals.
-- Sizes: 5k, 10k, 25k, 50k, 100k, 200k, 400k. Risk: `tight` (3 % daily loss, 3 % total drawdown,
-  9 % target, cheaper) or `medium` (4 %, 7 %, 10 %). `status` lists each plan's fee and rules.
+  Leverage: on crypto 50x at most and never above Perpl's own maximum for the market; on MonFunded
+  liquidity 50x forex, 30x metals and indices, 10x energies and base metals.
+- Sizes: 10k, 25k, 50k, 100k, 200k, all under the same rules: 10 % target, 3 % daily loss, 10 %
+  total drawdown, 30 % consistency, no time limit. `status` lists each plan's fee and rules.
 - Dollars are plain numbers with at most two decimals (`--notional 250.50`); ids are copied from
   `status`.
 
@@ -85,26 +89,28 @@ Trading is simulated, so `order` and `close` sign nothing.
 ### First run
 
 1. `mm monfunded status --json`: `signedIn`, `entriesOpen`, `plans`.
-2. If `entriesOpen` is false, tell the user MonFunded opens entries once its contract is deployed on
-   Monad, and stop there.
+2. If `entriesOpen` is false, tell the user MonFunded is taking no entries right now, and stop
+   there.
 3. `mm monfunded login --json`.
 
 ### Buy an assessment
 
-1. Agree on the size, risk, coin and budget with the user.
-2. `mm monfunded buy --size 5k --risk tight --pay usdc --json`: `data.done` is false and `data.plan`
+1. Agree on the size, coin and budget with the user.
+2. `mm monfunded buy --size 10k --pay usdc --json`: `data.done` is false and `data.plan`
    is the payment. Show it.
 3. After the user's yes, the same command with `--yes`: `data.account` is the new account.
 
 ### Trade
 
-1. `mm monfunded status --json`: per account, `dailyLoss.roomUsd`, `drawdown.roomUsd` and
-   `profitTarget` (assessments).
+1. `mm monfunded status --json`: per account, `dailyLoss.roomUsd`, `drawdown.roomUsd`,
+   `profitTarget` (assessments) and `consistency` (`ok` false: the pass waits until the profit
+   reaches `profitNeededUsd`, made on other days).
 2. `mm monfunded coach … --json`: `verdict`, `checks`, `risk`.
 3. `mm monfunded order … --json`: `position.id`, `position.entryPrice`, `position.closableFrom`.
 4. Later, `mm monfunded close --position <id> --json`: `position.pnlUsd`, and `passed` is true when
    this close passed the assessment (the account is funded from then on, its balance reset to its
-   size).
+   size). A close that reaches the target while `passed` stays false is the consistency rule: the
+   summary says what it waits for.
 
 ### Get paid
 
@@ -114,8 +120,9 @@ Trading is simulated, so `order` and `close` sign nothing.
    pauses until this payout is released or declined; released, it trades on from its starting
    balance.
 3. `data.withdrawal.state`: `paid` (done; `explorer` links the transaction), `unpaid` (MonFunded's
-   operator pays it within minutes, or `claim` it now), `review` (held while an admin checks the
-   wallet's screening: wait, nothing to do), `rejected` (declined: it will not be paid).
+   operator pays it within minutes, or `claim` it now), `review` (held until a person at MonFunded
+   decides on it: wait, nothing to do), `queued` (released, waiting for room under the contract's
+   daily payout limit: wait, it is sent by itself), `rejected` (declined: it will not be paid).
 4. For an `unpaid` withdrawal: `mm monfunded claim --withdrawal <id> --json`, show the plan, then
    `--yes`. The wallet pays the gas.
 
@@ -127,13 +134,14 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `NOT_SIGNED_IN`, `WRONG_WALLET` | No MonFunded session for the active wallet | `mm monfunded login` |
 | `NO_WALLET` | mm has no EVM wallet selected | `mm wallet select <address>` |
 | `AUTH_FAILED` (mm's) | Agent Wallet itself isn't signed in | `mm login` |
-| `ENTRIES_CLOSED` | The contract isn't deployed, or the plan is paused | Tell the user; nothing was paid |
-| `ALREADY_ACTIVE` | An assessment is already running | Finish it first; nothing was paid |
-| `UNKNOWN_PLAN` | No plan with that size and risk | Pick one from `status` |
+| `ENTRIES_CLOSED` | The plan is paused, or MonFunded is taking no entries | Tell the user; nothing was paid |
+| `TOO_MANY_ASSESSMENTS`, `FUNDED_CAP` | The wallet is at five running assessments, or the plan would take it past $400,000 of funded accounts | Finish one first, or pick a smaller size; nothing was paid |
+| `UNKNOWN_PLAN` | No plan of that size | Pick one from `status` |
+| `HEDGING`, `CROSS_HEDGE` | The wallet already holds the other side of that market, on this account or another | Close that position first; nothing was sent |
+| `PAYOUT_PENDING`, `PAYOUT_QUEUED` | A payout is waiting on a decision (no new order meanwhile), or released and waiting under the daily limit (no claim) | Wait; `status` shows it |
 | `INSUFFICIENT_FUNDS`, `NO_GAS` | Not enough of the coin, or no MON for gas | Ask the user to fund the wallet (`mm wallet add-fund`) |
 | `FEE_CHANGING` | The plan's price is being updated: the contract and MonFunded disagree on its fee for now | Wait a minute and run the same command again (without `--yes` first); nothing was paid |
 | `BAD_CONTRACT`, `BAD_CONFIG` | The contract or the API doesn't match what MonFunded lists, or the contract isn't the one the plugin pins | Stop and tell the user; nothing was paid |
-| `PLUGIN_OUTDATED` | MonFunded names a contract this version of the plugin doesn't know | Tell the user to update the plugin; nothing was signed |
 | `UNEXPECTED_MESSAGE` | The sign-in message failed a check (the message says which) | Tell the user; if it names the clock, they should fix it. Nothing was signed |
 | `INVALID_API_URL` | `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or is malformed | Tell the user; don't set either variable yourself |
 | `ENTRY_NOT_VERIFIED`, `REGISTER_FAILED` | Paid, but the account isn't registered yet | Run the `--entry-tx` command from the hint |

@@ -5,7 +5,7 @@ import { orderInputs, orderOf } from '../../orderInputs.ts'
 import { PluginCommand, schemaToFlags } from '../../sdk.ts'
 
 export default class MonfundedCoach extends PluginCommand<Awaited<ReturnType<typeof coach>>> {
-  static override description = 'Check an intended order against MonFunded’s rules without sending it: the leverage cap, margin, and how far the price can move against you before the account fails or the position is liquidated.'
+  static override description = 'Check an intended order against MonFunded’s rules without sending it: the leverage cap, margin, and how far the price can move against you before the account fails, and the margin level the order leaves.'
   static override examples = ['<%= config.bin %> monfunded coach --market BTC --side long --notional 1000 --leverage 2']
   static override flags = schemaToFlags(orderInputs)
   protected readonly pluginCommandId = 'monfunded:coach'

@@ -38,6 +38,7 @@ import { SessionStore } from '../src/lib/session.ts'
 import { executorSigner, type Executor } from '../src/lib/signer.ts'
 import { status } from '../src/lib/status.ts'
 import { close, coach, order } from '../src/lib/trade.ts'
+// @ts-expect-error The repository's test cluster helper is plain JavaScript, with no types.
 import { startTestCluster } from '../../scripts/lib/pg-test.mjs'
 
 const ROOT = new URL('../../', import.meta.url)

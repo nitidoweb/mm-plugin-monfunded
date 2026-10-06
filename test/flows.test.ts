@@ -260,6 +260,51 @@ test('a fee request left waiting in MetaMask, or sent and not confirmed, is neve
   assert.ok(!lost.calls.some((c) => c.path === '/enter'))
 })
 
+test('MetaMask’s own failure on the step that pays (a relay timeout: the transaction may be out) is the fee in doubt, never a plain retry', async () => {
+  const { api, calls } = fakeApi(buyRoutes())
+  const real = fakeExecutor()
+  let asked = 0
+  const exec: typeof real.exec = async (r, o) => {
+    if (r.kind === 'transaction' && ++asked === 2) throw Object.assign(new Error('The relay did not answer in time'), { code: 'RELAY_TIMEOUT' })
+    return real.exec(r, o)
+  }
+  await assert.rejects(buy(makeDeps(api, { yes: true, executor: { exec, requests: real.requests } }).d, TIGHT_5K), (e) => {
+    const { message, hint } = e as PluginError
+    return code('FEE_IN_DOUBT')(e) && /RELAY_TIMEOUT/.test(message) && /may or may not be paid/.test(message) && /^Don’t run this command again until you know/.test(hint) && /mm monfunded buy --size 5k --pay usdc --entry-tx <the transaction’s hash>/.test(hint)
+  })
+  assert.ok(!calls.some((c) => c.path === '/enter'))
+  // The same failure on the approval moves nothing: it stays MetaMask's own error.
+  const first = fakeExecutor()
+  const failing: typeof first.exec = async () => {
+    throw Object.assign(new Error('The relay did not answer in time'), { code: 'RELAY_TIMEOUT' })
+  }
+  await assert.rejects(buy(makeDeps(fakeApi(buyRoutes()).api, { yes: true, executor: { exec: failing, requests: first.requests } }).d, TIGHT_5K), (e) => !(e instanceof PluginError))
+})
+
+test('a funded account whose size can’t be read stops the buy: the limit is never passed by a figure that is not one', async () => {
+  const active = [nth(1, { status: 'funded', rules: { ...account().rules, size: '400000' } as never }), nth(2, { status: 'funded', rules: { ...account().rules, size: 200_000 } })]
+  const { api } = fakeApi(buyRoutes({ 'GET /me': () => ({ address: wallet.address, active, past: [] }) }))
+  const { d, executor, plans } = makeDeps(api, { yes: true })
+  await assert.rejects(buy(d, TIGHT_5K), (e) => code('BAD_RESPONSE')(e) && /The fee was not paid/.test((e as Error).message))
+  assert.equal(executor.requests.length, 0)
+  assert.equal(plans.length, 0)
+})
+
+test('--entry-tx for a plan that is gone, or while entries are closed, says the entry is paid and where to take it, never to pick another plan', async () => {
+  const entryTx = `0x${'e9'.repeat(32)}` as Hex
+  for (const [routes, was] of [
+    [buyRoutes({ 'GET /config': () => config({ tiers: TIERS.filter((t) => t.size !== 5000) }) }), 'UNKNOWN_PLAN'],
+    [buyRoutes({ 'GET /config': () => config({ contract: null }) }), 'ENTRIES_CLOSED'],
+  ] as const) {
+    const { api, calls } = fakeApi(routes)
+    await assert.rejects(buy(makeDeps(api, { yes: true }).d, { ...TIGHT_5K, entryTx }), (e) => {
+      const { message, hint } = e as PluginError
+      return code('PAID_NOT_REGISTERED')(e) && message.includes(was) && message.includes(entryTx) && /support ticket/.test(hint) && /^Don’t pay again/.test(hint) && !/nothing was paid|On sale/i.test(message + hint)
+    }, was)
+    assert.ok(!calls.some((c) => c.path === '/enter'), was)
+  }
+})
+
 test('a fee paid whose answer the plugin could not read says the account may have started, and to look first', async () => {
   for (const answer of [() => reply(200, '<html>challenge</html>'), () => ({ ...account(), id: 'not an id' })]) {
     const { api } = fakeApi(buyRoutes({ 'POST /enter': answer }))

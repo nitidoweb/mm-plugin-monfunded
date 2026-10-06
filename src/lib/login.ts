@@ -24,10 +24,10 @@ export function signInProblem(message: string, expected: SignInExpectation): str
   const m = parseSiweMessage(message)
   if (m.domain === undefined || m.address === undefined) return 'it is not an EIP-4361 sign-in message'
   if (m.scheme !== undefined || m.domain !== api.host) return `it is for ${m.scheme ? `${m.scheme}://` : ''}${m.domain}, not ${api.host}`
-  if (m.uri !== api.origin) return `its URI is ${m.uri ?? 'missing'}, not ${api.origin}`
+  if (m.uri !== api.origin) return `its URI is not ${api.origin}`
   if (m.address.toLowerCase() !== expected.wallet.toLowerCase()) return `it signs in ${m.address}, not the active wallet ${expected.wallet}`
   if (m.chainId !== CHAIN_ID) return `it is for chain ${m.chainId ?? 'none'}, not Monad (${CHAIN_ID})`
-  if (m.version !== '1') return `its version is ${m.version ?? 'missing'}, not 1`
+  if (m.version !== '1') return 'its version is not 1'
   if (m.statement !== SIGN_IN_STATEMENT) return `its statement is not “${SIGN_IN_STATEMENT}”`
   if (m.nonce !== expected.nonce) return 'its nonce is not the one the server gave'
   if (m.notBefore !== undefined || m.requestId !== undefined || m.resources !== undefined) return 'it carries fields MonFunded’s sign-in never has (a not-before time, a request id or resources)'

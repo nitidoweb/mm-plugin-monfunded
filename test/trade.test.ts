@@ -34,6 +34,13 @@ test('coach reads prices and caps as figures: a market named in words, or a pric
   for (const market of ['perpl:BTC', 'perpl:DOGE', 'perpl:LIT']) assert.ok(!JSON.stringify(await coach(makeDeps(api).d, { ...BTC_LONG, market })).includes('SYSTEM'), market)
 })
 
+test('coach never says ok on figures it could not read: an unknown loss room is a caution', async () => {
+  const { api } = fakeApi(routes({ 'GET /me': () => ({ address: wallet.address, active: [account({ progress: { ...progress(), dailyLimit: 'much', drawdownRoom: 'plenty' } as never })], past: [] }) }))
+  const r = await coach(makeDeps(api).d, BTC_LONG)
+  assert.equal(r.verdict, 'caution')
+  assert.match(r.summary.join('\n'), /could not be read/)
+})
+
 test('coach on a forex pair: the plan’s forex cap and MonFunded liquidity’s own, named as the source', async () => {
   const { d } = makeDeps(fakeApi(routes()).api)
   const over = await coach(d, { market: 'fx:USDJPY', side: 'long', notional: 1000, leverage: 31 })

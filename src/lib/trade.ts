@@ -96,7 +96,9 @@ export async function coach(d: Deps, input: OrderInput) {
     { check: 'margin', ok: s.margin <= s.freeMargin, detail: `${usd(s.margin)} needed, ${usd(s.freeMargin)} free` },
   ]
   const risk = q ? riskOf(input, s, q) : undefined
-  const verdict = blocked ? 'blocked' : risk && risk.failMovePct < CAUTION_MOVE_PCT ? 'caution' : 'ok'
+  // Room the plugin could not read is not room: never ok on a figure that is not one.
+  const unread = risk !== undefined && !Number.isFinite(risk.failMovePct)
+  const verdict = blocked ? 'blocked' : risk && (unread || risk.failMovePct < CAUTION_MOVE_PCT) ? 'caution' : 'ok'
   const summary: string[] = []
   if (blocked) summary.push(`MonFunded would refuse this order: ${blocked.message} ${blocked.hint}`)
   if (risk) {
@@ -105,7 +107,7 @@ export async function coach(d: Deps, input: OrderInput) {
     summary.push(`It locks ${usd(s.margin)} of margin and leaves the account’s margin level at ${pct(risk.marginLevelPct)}: at ${MARGIN_CALL_PCT} % the account shows a margin call, and at ${STOP_OUT_PCT} % the server closes its largest losing position.`)
     summary.push(`It fills at the next ${sourceOf(input.market)} quote, near ${risk.entryPrice} (the ${input.side === 'long' ? 'ask' : 'bid'}), and must stay open ${risk.minimumHoldSeconds} s before it can be closed.`)
     if (risk.roundTripSpreadUsd !== undefined) summary.push(`Opening and closing costs about ${usd(risk.roundTripSpreadUsd)} in spread.`)
-    if (verdict === 'caution') summary.push(`Caution: a move under ${pct(CAUTION_MOVE_PCT)} is an ordinary one. A smaller --notional leaves more room.`)
+    if (verdict === 'caution') summary.push(unread ? 'Caution: the account’s loss room could not be read, so how far the price can move against this order is unknown. Run `mm monfunded status` before sending it.' : `Caution: a move under ${pct(CAUTION_MOVE_PCT)} is an ordinary one. A smaller --notional leaves more room.`)
   }
   return { verdict, account: s.account.id, market: symbol, side: input.side, notionalUsd: input.notional, leverage: input.leverage, marginUsd: s.margin, checks, ...(risk && { risk }), summary }
 }

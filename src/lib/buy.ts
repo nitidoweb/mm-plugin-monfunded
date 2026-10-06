@@ -11,7 +11,7 @@ import { CHAIN_LABEL, signIn, type Deps, type Plan } from './context.ts'
 import { PluginError } from './errors.ts'
 import { coin, mon, pct, planName, txUrl, usd } from './format.ts'
 import { floorFromSwap, quoteMonFee, unconfirmed } from './kuru.ts'
-import type { Address, Hex, Me, PayWith, Tier } from './types.ts'
+import type { Address, Challenge, Hex, Me, PayWith, Tier } from './types.ts'
 import { accountView } from './views.ts'
 
 export type BuyInput = { size: number; pay: PayWith; entryTx?: Hex }
@@ -32,8 +32,13 @@ const feeChanging = (listedUsd: number, onchain: bigint) =>
 
 // The server's two limits per wallet (a practice account counts toward neither). It checks them
 // when the entry is registered, after the fee is paid, so they are checked here first.
+// A size that is not a figure would let any sum through the limit: it stops the buy instead.
+const sizeOf = (c: Challenge) => {
+  if (!(Number.isFinite(c.rules.size) && c.rules.size > 0)) throw new PluginError('BAD_RESPONSE', `MonFunded sent account ${c.id} without a size the plugin can read, so this wallet’s limits can’t be checked. The fee was not paid.`, 'Try again in a moment; if it keeps happening, check for a newer version of the plugin.')
+  return c.rules.size
+}
 const running = (me: Me) => me.active.filter((c) => !c.demo && c.status === 'assessment')
-const fundedUsd = (me: Me) => me.active.filter((c) => !c.demo && c.status === 'funded').reduce((sum, c) => sum + c.rules.size, 0)
+const fundedUsd = (me: Me) => me.active.filter((c) => !c.demo && c.status === 'funded').reduce((sum, c) => sum + sizeOf(c), 0)
 function underLimits(me: Me, tier: Tier) {
   const count = running(me).length
   if (count >= MAX_ASSESSMENTS) throw new PluginError('TOO_MANY_ASSESSMENTS', `This wallet already has ${count} assessments running, and MonFunded allows ${MAX_ASSESSMENTS} at a time. The fee was not paid.`, 'Pass or fail one first; `mm monfunded status` shows their progress.')
@@ -52,23 +57,45 @@ async function stillPriced(d: Deps, contract: Address, tier: Tier) {
   if (now.index !== tier.index || now.feeUsd !== tier.feeUsd || onchain !== usd6(tier.feeUsd)) throw feeChanging(now.feeUsd, onchain)
 }
 
-export async function buy(d: Deps, input: BuyInput) {
-  signIn(d)
+// The plan the command names, on the contract MonFunded names: what any payment starts from.
+async function planFor(d: Deps, input: BuyInput) {
   const config = await d.api.config()
   const contract = config.contract
   if (!contract) throw new PluginError('ENTRIES_CLOSED', 'MonFunded is taking no entries right now (it names no contract to pay), so nothing was paid.', 'Run `mm monfunded status` later: it says when entries are open.')
   const tier = config.tiers.find((t) => t.size === input.size && t.enabled !== false)
   if (!tier) {
     const sizes = config.tiers.filter((t) => t.enabled !== false).map((t) => sizeFlag(t.size))
-    throw new PluginError('UNKNOWN_PLAN', `MonFunded sells no plan of $${input.size.toLocaleString('en-US')}.`, sizes.length ? `On sale: --size ${sizes.join(', ')}.` : 'Run `mm monfunded status` to see the plans on sale.')
+    throw new PluginError('UNKNOWN_PLAN', `MonFunded sells no plan of ${input.size.toLocaleString('en-US')}.`, sizes.length ? `On sale: --size ${sizes.join(', ')}.` : 'Run `mm monfunded status` to see the plans on sale.')
   }
-  const me = await d.api.me()
+  return { config, contract, tier }
+}
+
+// With --entry-tx the fee is already paid: a refusal that elsewhere means nothing was paid (entries
+// closed, no such plan, a configuration the plugin does not trust) must not read that way here.
+const PAID_ANYWAY: Record<string, string> = {
+  ENTRIES_CLOSED: 'MonFunded is taking no entries right now',
+  UNKNOWN_PLAN: 'MonFunded sells no plan of that size right now',
+  BAD_CONFIG: 'MonFunded’s configuration is not one the plugin trusts',
+}
+
+export async function buy(d: Deps, input: BuyInput) {
+  signIn(d)
+  const paid = input.entryTx
+  const { config, contract, tier } = await planFor(d, input).catch((e: unknown) => {
+    if (!paid || !(e instanceof PluginError) || !Object.hasOwn(PAID_ANYWAY, e.code)) throw e
+    throw new PluginError(
+      'PAID_NOT_REGISTERED',
+      `The entry ${paid} is paid, but it can’t be registered right now (${e.code}): ${PAID_ANYWAY[e.code]}.`,
+      'Don’t pay again, and don’t buy another plan in its place. Check that --size is the plan this entry paid for, and run the same command again later; if it still can’t be registered, open a support ticket in the MonFunded dashboard (https://monfunded.com/app/#support) with the entry transaction, within 72 hours of its payment.',
+    )
+  })
   const again = `mm monfunded buy --size ${sizeFlag(tier.size)} --pay ${input.pay.toLowerCase()}`
   // An entry already paid is the server's to judge: nothing is paid here, so nothing is checked first.
-  if (input.entryTx) return register(d, tier, input.entryTx, again)
+  if (paid) return register(d, tier, paid, again)
+  const me = await d.api.me()
   underLimits(me, tier)
   // Under the limit now, but over it if the assessments running pass first: said before the payment.
-  const pending = running(me).reduce((sum, c) => sum + c.rules.size, 0)
+  const pending = running(me).reduce((sum, c) => sum + sizeOf(c), 0)
   const mayVoid = fundedUsd(me) + tier.size + pending > MAX_FUNDED_USD
 
   // The contract must take the coins MonFunded names and charge exactly the plan's listed fee
@@ -146,7 +173,13 @@ export async function buy(d: Deps, input: BuyInput) {
     // confirmed in time, may still pay it after this command has given up: the refusal then says
     // how to register that payment, and never to pay again on top of it.
     entryTx = await signer.send(call, s.summary).catch((e: unknown) => {
-      if (s !== steps.at(-1) || !(e instanceof PluginError)) throw e
+      if (s !== steps.at(-1)) throw e
+      // MetaMask's own failure here (a relay or job timeout, a failed send) can leave the fee's
+      // transaction out on Monad all the same.
+      if (!(e instanceof PluginError)) {
+        const mm = e as { code?: unknown; message?: unknown }
+        throw new PluginError('FEE_IN_DOUBT', `MetaMask Agent Wallet did not finish the fee’s transaction (${typeof mm.code === 'string' && /^[A-Z_]{1,40}$/.test(mm.code) ? mm.code : 'an error'}: ${typeof mm.message === 'string' ? mm.message.slice(0, 200) : 'no details'}), so the fee may or may not be paid.`, `Don’t run this command again until you know: look at \`mm wallet requests list\` and the wallet’s latest transactions on Monad. If the fee’s transaction was sent, register it with ${again} --entry-tx <the transaction’s hash>; only if it was not, run this command again.`)
+      }
       if (e.code === 'TX_UNCONFIRMED' && e.tx) throw new PluginError(e.code, e.message, `Don’t pay again: the fee may be paid. Once ${txUrl(e.tx as Hex)} is confirmed, register it: ${again} --entry-tx ${e.tx}`, e.tx)
       if (e.code === 'NOT_SIGNED') throw new PluginError(e.code, `${e.message} The fee was not paid by this command.`, `If the fee’s request is waiting for an approval in MetaMask (\`mm wallet requests list\`), choose one, never both, or it pays the fee twice: approve it there and then register that payment with ${again} --entry-tx <the transaction’s hash>; or reject it and run this command again.`)
       throw e

@@ -40,8 +40,15 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
 
 ## Install
 
-The plugin is not on npm yet. It installs from this folder instead — four steps, meant to be
-pasted one after the other, and nothing here needs an account beyond the Agent Wallet one above.
+The plugin is on npm as `mm-plugin-monfunded` (MIT, 0.2.2). But `mm plugins install
+mm-plugin-monfunded` does not stick on MetaMask's CLI 6.2.1 or 7.0.0: the CLI installs it and
+removes it at once ("PLUGIN_MANIFEST_FILE_MISSING … has been removed"), because its approval
+hook looks the new plugin up in the running process's plugin list, where oclif never registers an
+npm install (@oclif/plugin-plugins 5.5.2 `install()` only writes it to the data dir's
+package.json). The same happens to other published plugins (`@estmcmxci/mm-plugin-ensv2`);
+reported to MetaMask (docs/hackathon/metamask-cli-issue.md). Until that is fixed it installs from
+this folder — four steps, meant to be pasted one after the other, and nothing here needs an account
+beyond the Agent Wallet one above.
 
 1. Get the code:
 

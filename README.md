@@ -78,7 +78,7 @@ pasted one after the other, and nothing here needs an account beyond the Agent W
 4. Check that it works:
 
    ```sh
-   mm plugins          # mm-plugin-monfunded 0.2.0
+   mm plugins          # mm-plugin-monfunded 0.2.2
    mm monfunded status
    ```
 

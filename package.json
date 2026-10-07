@@ -1,6 +1,6 @@
 {
   "name": "mm-plugin-monfunded",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "MonFunded for MetaMask Agent Wallet: an AI agent buys a MonFunded assessment, trades it and claims its payouts with the mm CLI, on Monad.",
   "license": "MIT",
   "homepage": "https://monfunded.com/agents/",
@@ -23,13 +23,15 @@
   },
   "files": [
     "dist",
+    "oclif.manifest.json",
     "SKILL.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "test:e2e": "node test/e2e.ts"
+    "test:e2e": "node test/e2e.ts",
+    "prepack": "npm run build && oclif manifest"
   },
   "oclif": {
     "bin": "mm",
@@ -163,6 +165,7 @@
     "@ethereumjs/util": "^10.1.3",
     "@metamask/agent-wallet": "^6.2.1",
     "@types/node": "26.6.2",
+    "oclif": "6.0.2",
     "solc": "^0.8.37",
     "typescript": "7.0.2"
   }

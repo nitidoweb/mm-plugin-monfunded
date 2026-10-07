@@ -7,6 +7,10 @@ account and claim payouts.
 - MonFunded: https://monfunded.com (the agents page: https://monfunded.com/agents/)
 - MetaMask Agent Wallet: https://docs.metamask.io/agent-wallet/
 - For the agent itself: [SKILL.md](SKILL.md). A walk-through of the whole flow: [demo.md](demo.md).
+- Source: https://github.com/nitidoweb/mm-plugin-monfunded (MIT). It is developed as the `agent/`
+  folder of MonFunded's own repository and published from there with its history (`git subtree`);
+  `test/e2e.ts` runs only inside that repository, against the MonFunded server and the compiled
+  contract, and is in the gate every deploy runs. Everything else here stands alone.
 
 ## Commands
 
@@ -46,15 +50,15 @@ removes it at once ("PLUGIN_MANIFEST_FILE_MISSING … has been removed"), becaus
 hook looks the new plugin up in the running process's plugin list, where oclif never registers an
 npm install (@oclif/plugin-plugins 5.5.2 `install()` only writes it to the data dir's
 package.json). The same happens to other published plugins (`@estmcmxci/mm-plugin-ensv2`);
-reported to MetaMask (docs/hackathon/metamask-cli-issue.md). Until that is fixed it installs from
+reported to MetaMask. Until that is fixed it installs from
 this folder — four steps, meant to be pasted one after the other, and nothing here needs an account
 beyond the Agent Wallet one above.
 
 1. Get the code:
 
    ```sh
-   git clone https://github.com/nitidoweb/monfunded.git
-   cd monfunded/agent
+   git clone https://github.com/nitidoweb/mm-plugin-monfunded.git
+   cd mm-plugin-monfunded
    ```
 
 2. Plugins are a beta feature of `mm`. Turn them on once (the second line allows installing from a

@@ -6,10 +6,9 @@
   "homepage": "https://monfunded.com/agents/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nitidoweb/monfunded.git",
-    "directory": "agent"
+    "url": "git+https://github.com/nitidoweb/mm-plugin-monfunded.git"
   },
-  "bugs": "https://github.com/nitidoweb/monfunded/issues",
+  "bugs": "https://github.com/nitidoweb/mm-plugin-monfunded/issues",
   "type": "module",
   "keywords": [
     "oclif-plugin",

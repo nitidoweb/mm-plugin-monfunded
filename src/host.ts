@@ -26,8 +26,11 @@ export async function perform<T extends { summary: string[] }>(ctx: PluginComman
     const wallet = activeWallet(ctx.walletStateManager.read() as WalletState)
     const reader = clientReader(ctx.publicClient(CHAIN_ID))
     const chancela = chancelaSettings(process.env)
+    // Chancela's lines must reach whoever runs the command: a person at the terminal, or an agent
+    // reading stderr in JSON mode (the approval request's id is how its owner finds it).
     const say = (line: string) => {
       if (io.isInteractive) io.emit(line)
+      else process.stderr.write(`${line}\n`)
     }
     const deps: Deps = {
       api: new Api(base, fetch, io.signal, { dev }),

@@ -177,6 +177,11 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   dashboard, and only the signed ALLOW that follows lets the wallet sign. A refusal, a lapsed
   request, no answer within 8 s, or an answer that does not verify all sign nothing. Every
   decision is anchored on Monad and replayable by anyone (`npx chancela-check replay <audit id>`).
+  Know what this gate is: it binds the plugin, as configured in the environment the command runs
+  in. An agent that edits its own environment, or sends with `mm wallet send` instead of the
+  plugin, is not bound by it — the hard limits on the wallet are MetaMask's own (Guard Mode, the
+  spending limit). Chancela sees the amount in cents, the recipient's name and address (for a claim,
+  your wallet), and a memo naming the plan or the withdrawal; nothing else.
 - **Payouts go to your wallet only.** The contract pays the wallet that owns the account, with
   MonFunded's signature over that wallet, the coin and the amount.
 - **The session stays private.** The MonFunded session cookie is kept in

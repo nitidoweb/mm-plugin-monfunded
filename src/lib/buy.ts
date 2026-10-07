@@ -164,7 +164,7 @@ export async function buy(d: Deps, input: BuyInput) {
   if (!(await d.confirm(plan))) return { done: false as const, plan, next: NEXT, summary: [NEXT] }
   // Chancela, when set up, decides after the person and before the wallet: the fee is a transfer
   // to the contract, and its agent's policy (or its owner, with a passkey) may still say no.
-  if (d.chancela) await d.chancela({ amountUsd: tier.feeUsd, recipient: 'MonFunded challenge contract', recipientAddress: contract, memo: `fee for plan ${tier.id}` })
+  const chancela = d.chancela ? await d.chancela({ amountUsd: tier.feeUsd, recipient: 'MonFunded challenge contract', recipientAddress: contract, memo: `fee for plan ${tier.id}` }) : undefined
   const signer = await d.signer()
   let entryTx: Hex | undefined
   // The plan may be repriced while it is shown, or between its approval and its entry: each
@@ -188,7 +188,7 @@ export async function buy(d: Deps, input: BuyInput) {
       throw e
     })
   }
-  return { ...(await register(d, tier, entryTx as Hex, again)), plan }
+  return { ...(await register(d, tier, entryTx as Hex, again)), plan, ...(chancela && { chancela }) }
 }
 
 // The server's refusals that registering again can't change: the plan's price went up after the

@@ -1,6 +1,6 @@
 {
   "name": "mm-plugin-monfunded",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "MonFunded for MetaMask Agent Wallet: an AI agent buys a MonFunded assessment, trades it and claims its payouts with the mm CLI, on Monad.",
   "license": "MIT",
   "homepage": "https://monfunded.com/agents/",
@@ -156,6 +156,7 @@
     "tmp": "^0.2.7"
   },
   "dependencies": {
+    "chancela-sdk": "0.1.0",
     "viem": "2.56.8"
   },
   "devDependencies": {

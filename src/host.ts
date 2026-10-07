@@ -7,6 +7,7 @@ import type { CommandIO, PluginCommandContext } from '@metamask/agent-wallet/plu
 import { Api } from './lib/api.ts'
 import { clientReader } from './lib/chain.ts'
 import { API_URL_ENV, CHAIN_ID } from './lib/constants.ts'
+import { chancelaGate, chancelaSettings } from './lib/chancela.ts'
 import { planLines, type Deps } from './lib/context.ts'
 import { PluginError } from './lib/errors.ts'
 import { apiTarget } from './lib/inputs.ts'
@@ -24,6 +25,10 @@ export async function perform<T extends { summary: string[] }>(ctx: PluginComman
     if (dev && io.isInteractive) io.emit(`Using the MonFunded API at ${base} (${API_URL_ENV}, developer mode).`)
     const wallet = activeWallet(ctx.walletStateManager.read() as WalletState)
     const reader = clientReader(ctx.publicClient(CHAIN_ID))
+    const chancela = chancelaSettings(process.env)
+    const say = (line: string) => {
+      if (io.isInteractive) io.emit(line)
+    }
     const deps: Deps = {
       api: new Api(base, fetch, io.signal, { dev }),
       store: new SessionStore(storeDir(process.env)),
@@ -38,6 +43,7 @@ export async function perform<T extends { summary: string[] }>(ctx: PluginComman
       },
       now: Date.now,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      ...(chancela && { chancela: chancelaGate(chancela, { now: Date.now, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), say }) }),
     }
     const result = await flow(deps)
     if (io.isInteractive) for (const line of result.summary) io.emit(line)

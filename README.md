@@ -44,7 +44,7 @@ Add `--json` for output an agent can read, and `--help` to any command for its f
 
 ## Install
 
-The plugin is on npm as `mm-plugin-monfunded` (MIT, 0.2.2). But `mm plugins install
+The plugin is on npm as `mm-plugin-monfunded` (MIT, 0.3.0). But `mm plugins install
 mm-plugin-monfunded` does not stick on MetaMask's CLI 6.2.1 or 7.0.0: the CLI installs it and
 removes it at once ("PLUGIN_MANIFEST_FILE_MISSING … has been removed"), because its approval
 hook looks the new plugin up in the running process's plugin list, where oclif never registers an
@@ -89,7 +89,7 @@ beyond the Agent Wallet one above.
 4. Check that it works:
 
    ```sh
-   mm plugins          # mm-plugin-monfunded 0.2.2
+   mm plugins          # mm-plugin-monfunded 0.3.0
    mm monfunded status
    ```
 
@@ -168,6 +168,15 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   and everything runs on Monad (143). An API that names another contract is refused
   (`BAD_CONFIG`) and nothing is signed. Another server needs the developer flag (Settings), which trusts that server
   as it is and says so loudly on every command.
+- **Chancela, if you want a second gate.** With three settings (below) every transfer — the fee
+  that buys an assessment, a claim that takes a payout — is first put to [Chancela](https://chancela.xyz)
+  as the agent you registered there: its policy (so much per transfer, so much per day) answers
+  with a signed decision the plugin checks on your machine against the attestor you configured,
+  never the server's word. A transfer is CRITICAL under Chancela, so the usual answer is "ask the
+  owner": the plugin prints the request's id, you approve it with your passkey in Chancela's
+  dashboard, and only the signed ALLOW that follows lets the wallet sign. A refusal, a lapsed
+  request, no answer within 8 s, or an answer that does not verify all sign nothing. Every
+  decision is anchored on Monad and replayable by anyone (`npx chancela-check replay <audit id>`).
 - **Payouts go to your wallet only.** The contract pays the wallet that owns the account, with
   MonFunded's signature over that wallet, the coin and the amount.
 - **The session stays private.** The MonFunded session cookie is kept in
@@ -180,6 +189,9 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
 | `MONFUNDED_API_URL` | Talk to another MonFunded server, e.g. `http://localhost:4417` for local testing: only https, or http on this machine, and only with `MONFUNDED_DEV=1`. |
 | `MONFUNDED_DEV` | `1` turns on developer mode: `MONFUNDED_API_URL` is honored, and that server's contract and MON book are trusted as it names them. Every command then prints a warning on stderr. For test servers and test funds only; never set it for real money. |
 | `MONFUNDED_AGENT_HOME` | Where the session file lives (default `~/.monfunded`). |
+| `MONFUNDED_CHANCELA_AGENT` | The id of this plugin's agent at Chancela (e.g. `TA-006`). Set it and every transfer is put to Chancela first (How it keeps you safe). |
+| `MONFUNDED_CHANCELA_ATTESTOR` | The address whose signature on a Chancela decision counts (Chancela shows it on the agent's page). Required with the agent; the plugin never takes the attestor from the server's answer. |
+| `MONFUNDED_CHANCELA_URL` | A Chancela deployment of your own (default `https://chancela.xyz`; https only, http on this machine). Setting it without the agent is an error, never a gate turned off. |
 
 ## Troubleshooting
 
@@ -195,6 +207,16 @@ mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
   Check the computer's clock (it must be within 5 minutes), then `mm monfunded login` again.
 - **`INVALID_API_URL`**: `MONFUNDED_API_URL` is set without `MONFUNDED_DEV=1`, or isn't an origin.
   Unset it to use monfunded.com.
+- **`CHANCELA_DENIED`**, **`CHANCELA_DECLINED`**, **`CHANCELA_APPROVAL_EXPIRED`**: Chancela's
+  policy refused the transfer, you declined it, or the approval request lapsed (15 minutes).
+  Nothing was signed; run the command again if the transfer is really wanted, and approve the new
+  request in time.
+- **`CHANCELA_UNREACHABLE`**, **`CHANCELA_AGENT_SUSPENDED`**, **`CHANCELA_UNVERIFIED_…`**: no
+  usable answer from Chancela (a burst of refusals suspends an agent until its owner reactivates
+  it), or an answer that did not verify against `MONFUNDED_CHANCELA_ATTESTOR`. Nothing was signed;
+  no answer is never permission.
+- **`CHANCELA_MISCONFIGURED`**: one of the three `MONFUNDED_CHANCELA_*` settings is missing or
+  malformed. Set all three (or none).
 - **`[AWAITING_MFA]`**: Guard Mode wants your approval: approve it in MetaMask (phone or email), and
   see `mm wallet requests list`.
 - **`PLUGIN_BETA_DISABLED`**: turn plugins on (Install, step 1).

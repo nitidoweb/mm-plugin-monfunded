@@ -4,7 +4,7 @@
 // server stays the judge of every rule; these only make the plugin's answers clearer.
 import type { Address } from './types.ts'
 
-export const VERSION = '0.2.2'
+export const VERSION = '0.3.0'
 export const USER_AGENT = `mm-plugin-monfunded/${VERSION} (+https://monfunded.com/agents/)`
 
 // Monad mainnet: the contract, the coins and every transaction the plugin sends.

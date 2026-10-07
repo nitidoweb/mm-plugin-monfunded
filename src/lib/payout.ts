@@ -111,6 +111,8 @@ export async function claim(d: Deps, input: ClaimInput) {
     const next = 'Nothing was signed. Run the same command again with --yes to sign and claim.'
     return { done: false as const, plan, next, summary: [next] }
   }
+  // A claim moves the payout from the contract to this wallet: Chancela, when set up, is asked first.
+  if (d.chancela) await d.chancela({ amountUsd: w.paidUsd, recipient: 'this wallet (payout claim)', recipientAddress: d.wallet, memo: `withdrawal ${w.id}` })
   const signer = await d.signer()
   const tx = await signer.send(claimCall(contract, id, token, amount, proof.logRoot, proof.signature), `MonFunded: claim your ${coin(w.paidUsd, proof.token)} payout`)
   return { done: true as const, alreadyPaid: false, plan, tx, explorer: txUrl(tx), summary: [`Claimed ${coin(w.paidUsd, proof.token)} in ${txUrl(tx)}.`] }

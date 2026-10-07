@@ -2,6 +2,7 @@
 // signer (asked for only once a plan is confirmed) and the clock. src/host.ts builds it from mm's
 // command context; the tests build it from stand-ins.
 import type { Api, Fetch } from './api.ts'
+import type { Gate } from './chancela.ts'
 import type { ChainReader } from './chain.ts'
 import { PluginError } from './errors.ts'
 import type { Session, SessionStore } from './session.ts'
@@ -48,6 +49,10 @@ export type Deps = {
   signer: () => Promise<Signer>
   // Whether to go ahead with a plan: --yes, or a yes at mm's interactive prompt.
   confirm: (plan: Plan) => Promise<boolean>
+  // Chancela in front of every transfer (src/lib/chancela.ts), when the operator set it up: asked
+  // after the plan is confirmed and before the wallet signs; it throws when the answer is not a
+  // verified ALLOW.
+  chancela?: Gate
   now: () => number
   sleep: (ms: number) => Promise<void>
 }

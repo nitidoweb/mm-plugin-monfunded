@@ -50,6 +50,11 @@ Trading is simulated, so `order` and `close` sign nothing.
 8. **Talk to monfunded.com only.** Never set `MONFUNDED_DEV` or `MONFUNDED_API_URL` yourself: they
    point the plugin at another server and trust whatever contract it names. If a command prints
    `MONFUNDED_DEV=1: DEVELOPER MODE` on stderr, stop and tell the user before any payment or claim.
+9. **Chancela's gate is the user's, not yours.** When `MONFUNDED_CHANCELA_AGENT` is set, every
+   payment and claim is first put to Chancela; a line beginning `Chancela asks the agent's owner to
+   approve` means the user must approve the request in Chancela's dashboard with their passkey while
+   the command waits (up to 15 minutes). Tell them the request id; never unset the `MONFUNDED_CHANCELA_*`
+   settings, change them, or retry around a `CHANCELA_*` refusal.
 
 ## Before the first command
 
@@ -158,6 +163,8 @@ Trading is simulated, so `order` and `close` sign nothing.
 | `POSITIONS_OPEN` | A payout needs the account flat | Close every position first |
 | `PAYOUT_PENDING` | A payout is already pending a decision | Wait for it to be released or declined |
 | `UNDER_REVIEW`, `WITHDRAWAL_REJECTED` | The payout is held, or was declined | Wait, or tell the user |
+| `CHANCELA_DENIED`, `CHANCELA_DECLINED`, `CHANCELA_APPROVAL_EXPIRED` | Chancela's policy refused the transfer, the user declined it, or the approval request lapsed | Nothing was signed. Tell the user; run the command again only if they want the transfer and will approve it in time |
+| `CHANCELA_UNREACHABLE`, `CHANCELA_AGENT_SUSPENDED`, `CHANCELA_UNVERIFIED_*`, `CHANCELA_MISCONFIGURED` | No usable answer from Chancela, an answer that did not verify, or a setting missing | Nothing was signed. Stop and tell the user; never change the `MONFUNDED_CHANCELA_*` settings yourself |
 | `NOT_SIGNED`, `TX_DENIED`, `TX_EXPIRED` (mm's), `JOB_TIMEOUT` (mm's) | MetaMask didn't sign: denied, expired, or waiting for approval | Ask the user; `mm wallet requests list`. **Never run `buy` again while its fee request is still pending**: the user either approves it (then register with `--entry-tx`, as the hint says) or rejects it (then run `buy` again). Both pays the fee twice |
 | `FEE_IN_DOUBT`, and any of mm's own errors from `buy --yes` you don't recognise (`RELAY_TIMEOUT`, `RELAY_FAILED`, `TX_FAILED`, …) | MetaMask did not finish the fee's transaction: it may or may not have been sent | **Never run `buy` again until you know.** Check `mm wallet requests list` and the wallet's latest transactions with the user; if the fee was sent, register it with `--entry-tx` |
 | `TX_UNCONFIRMED` | A transaction was sent and Monad did not confirm it in time: it may still land | Don't send it again. Give the user the transaction; for `buy`, register it with the `--entry-tx` command from the hint once it is confirmed |

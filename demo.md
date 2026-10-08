@@ -252,7 +252,7 @@ Three things to know:
 
 ## 3. Ask an agent
 
-Put [SKILL.md](SKILL.md) in your agent's skills (see [README.md](README.md), "Use it"). Then ask
+Put [SKILL.md](skills/monfunded/SKILL.md) in your agent's skills (see [README.md](README.md), "Use it"). Then ask
 it, for example in Claude Code:
 
 > Using MonFunded, buy the smallest assessment with USDC. Show me the payment before you pay.

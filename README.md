@@ -6,7 +6,7 @@ account and claim payouts.
 
 - MonFunded: https://monfunded.com (the agents page: https://monfunded.com/agents/)
 - MetaMask Agent Wallet: https://docs.metamask.io/agent-wallet/
-- For the agent itself: [SKILL.md](SKILL.md). A walk-through of the whole flow: [demo.md](demo.md).
+- For the agent itself: [skills/monfunded/SKILL.md](skills/monfunded/SKILL.md). A walk-through of the whole flow: [demo.md](demo.md).
 - Source: https://github.com/nitidoweb/mm-plugin-monfunded (MIT). It is developed as the `agent/`
   folder of MonFunded's own repository and published from there with its history (`git subtree`);
   `test/e2e.ts` runs only inside that repository, against the MonFunded server and the compiled
@@ -116,13 +116,13 @@ mm monfunded claim --withdrawal 0x… --yes
 
 In a terminal, `buy`, `withdraw` and `claim` show the plan and ask before going ahead; `--yes`
 skips the question. Run by an agent (no terminal, or `--json`), they only return the plan unless
-`--yes` is given, so the agent can show it to you first. [SKILL.md](SKILL.md) tells agents to do
+`--yes` is given, so the agent can show it to you first. [skills/monfunded/SKILL.md](skills/monfunded/SKILL.md) tells agents to do
 exactly that.
 
-To let an agent use it, give it [SKILL.md](SKILL.md). For Claude Code:
+To let an agent use it, give it [skills/monfunded/SKILL.md](skills/monfunded/SKILL.md). For Claude Code:
 
 ```sh
-mkdir -p ~/.claude/skills/monfunded && cp SKILL.md ~/.claude/skills/monfunded/
+mkdir -p ~/.claude/skills/monfunded && cp skills/monfunded/SKILL.md ~/.claude/skills/monfunded/
 ```
 
 ## How it keeps you safe
